@@ -1,0 +1,14 @@
+# Python cache
+__pycache__/
+*.pyc
+
+# IDE
+.idea/
+
+# Local runtime/state files
+session.json
+quota_history.json
+signin_status.json
+
+# Logs
+*.log
