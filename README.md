@@ -1,6 +1,6 @@
-# Xiavier Local Console
+# new-api Local Console
 
-A local Flask web console for multi-account Xiavier management.
+A local Flask web console for multi-account new-api management.
 
 ## Features
 
@@ -26,13 +26,15 @@ A local Flask web console for multi-account Xiavier management.
 qiandao/
 ├─ app.py                  # Flask backend
 ├─ run_web.bat             # Start local web server
+├─ data/                   # Local runtime data (ignored by git)
+│  ├─ session.json         # Local account config
+│  ├─ quota_history.json   # Local balance history
+│  ├─ signin_status.json   # Today sign-in status store
+│  └─ status_cache.json    # Latest account status cache
 ├─ templates/
 │  └─ index.html           # Web UI
 ├─ .gitignore
 ├─ README.md
-├─ session.json            # Local account config (ignored by git)
-├─ quota_history.json      # Local balance history (ignored by git)
-└─ signin_status.json      # Local sign-in status store (ignored by git)
 ```
 
 ## Quick Start
@@ -43,7 +45,7 @@ qiandao/
 pip install flask requests
 ```
 
-2. Prepare `session.json` in project root:
+2. Prepare `data/session.json`:
 
 ```json
 {
@@ -78,7 +80,7 @@ run_web.bat
 
 - When you run `签到` / `全部签到`, successful states (`SIGNED_NOW`, `ALREADY_SIGNED`) are saved as `已签到`.
 - Failed states are saved as `失败`.
-- Store file: `signin_status.json`.
+- Store file: `data/signin_status.json`.
 
 ### 2) Daily cleanup
 
@@ -89,6 +91,7 @@ run_web.bat
 
 - Current balance comes from `/api/user/self`.
 - Delta is computed against the **previous stored snapshot**.
+- Latest detection result is also cached locally in `data/status_cache.json`.
 - If current response has no quota, app falls back to last snapshot and marks it as cached source in UI.
 
 ## UI Actions
@@ -100,10 +103,12 @@ run_web.bat
 
 ## Notes
 
-- `session.json`, `quota_history.json`, and `signin_status.json` are intentionally ignored by git.
+- All runtime data is stored under `data/` and ignored by git.
+- On startup, old root-level files (`session.json`, `quota_history.json`, `signin_status.json`) are migrated automatically into `data/`.
 - If UI looks stale after update, restart backend and hard refresh browser (`Ctrl+F5`).
 
 ## Security
 
-- Keep `session.json` local.
+- Keep `data/session.json` local.
 - Do not share `session` or API keys publicly.
+

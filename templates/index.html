@@ -3,7 +3,9 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Xiavier 本地控制台</title>
+  <title>new-api 本地控制台</title>
+  <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='favicon.svg') }}" />
+  <link rel="shortcut icon" href="{{ url_for('static', filename='favicon.svg') }}" />
   <style>
     @import url("https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&family=Cormorant+Garamond:wght@600&display=swap");
     :root {
@@ -139,17 +141,239 @@
       border-radius: 7px;
       padding: 2px 8px;
     }
+    .detail-hero {
+      position: relative;
+      overflow: hidden;
+      border: 1px solid var(--line-strong);
+      border-radius: 16px;
+      padding: 14px;
+      background:
+        radial-gradient(circle at top right, rgba(212, 175, 55, 0.18), transparent 28%),
+        linear-gradient(135deg, #fffdfa 0%, #fff6e6 100%);
+      box-shadow: 0 14px 34px rgba(91, 67, 35, 0.1);
+    }
+    .detail-hero::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(90deg, transparent, rgba(255,255,255,0.25), transparent);
+      transform: translateX(-120%);
+      opacity: 0;
+      pointer-events: none;
+    }
+    .detail-hero.flash::after {
+      opacity: 1;
+      animation: heroSweep 1s ease;
+    }
+    @keyframes heroSweep {
+      from { transform: translateX(-120%); }
+      to { transform: translateX(120%); }
+    }
+    .hero-title {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+    .hero-name {
+      font-size: 27px;
+      line-height: 1;
+      font-family: "Cormorant Garamond", serif;
+      font-weight: 600;
+      letter-spacing: 0.3px;
+    }
+    .hero-email {
+      color: var(--sub);
+      font-size: 12px;
+      word-break: break-all;
+    }
+    .hero-badges {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+    .hero-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      border-radius: 999px;
+      padding: 5px 10px;
+      font-size: 12px;
+      font-weight: 600;
+      background: rgba(255,255,255,0.75);
+      border: 1px solid rgba(176,139,47,.2);
+    }
+    .metric-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 10px;
+    }
+    .metric-card {
+      border: 1px solid rgba(176,139,47,.22);
+      border-radius: 12px;
+      background: rgba(255,255,255,0.74);
+      padding: 10px;
+      min-height: 88px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+    .metric-label {
+      color: var(--sub);
+      font-size: 12px;
+      font-weight: 600;
+    }
+    .metric-value {
+      font-size: 26px;
+      line-height: 1.05;
+      font-weight: 700;
+      color: #2d3748;
+      letter-spacing: -0.4px;
+    }
+    .metric-note {
+      color: var(--sub);
+      font-size: 11px;
+    }
+    .metric-positive { color: var(--ok); }
+    .metric-negative { color: var(--bad); }
+    .metric-neutral { color: #5f4e3b; }
+    .toast-stack {
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      z-index: 9999;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      pointer-events: none;
+    }
+    .toast {
+      min-width: 260px;
+      max-width: 380px;
+      border-radius: 14px;
+      padding: 12px 14px;
+      border: 1px solid rgba(255,255,255,.6);
+      box-shadow: 0 18px 40px rgba(56, 42, 23, 0.16);
+      backdrop-filter: blur(10px);
+      color: #fff;
+      animation: toastIn .22s ease;
+    }
+    .toast.ok { background: rgba(47,133,90,.92); }
+    .toast.warn2 { background: rgba(183,121,31,.92); }
+    .toast.bad2 { background: rgba(197,48,48,.92); }
+    .toast-title {
+      font-weight: 700;
+      margin-bottom: 4px;
+      font-size: 13px;
+    }
+    .toast-body {
+      font-size: 12px;
+      opacity: .96;
+      line-height: 1.45;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    @keyframes toastIn {
+      from { opacity: 0; transform: translateY(-8px) scale(.98); }
+      to { opacity: 1; transform: translateY(0) scale(1); }
+    }
+    .busy-button {
+      position: relative;
+      padding-left: 28px !important;
+    }
+    .busy-button::before {
+      content: "";
+      position: absolute;
+      left: 10px;
+      top: 50%;
+      width: 10px;
+      height: 10px;
+      margin-top: -6px;
+      border: 2px solid rgba(255,255,255,.55);
+      border-top-color: #fff;
+      border-radius: 999px;
+      animation: spin .7s linear infinite;
+    }
+    .input-invalid {
+      border-color: #c53030 !important;
+      box-shadow: 0 0 0 3px rgba(197, 48, 48, 0.16) !important;
+    }
+    .modal-shell {
+      position: fixed;
+      inset: 0;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      background: rgba(42, 34, 24, 0.45);
+      backdrop-filter: blur(10px);
+      z-index: 9998;
+    }
+    .modal-shell.open { display: flex; }
+    .modal-card {
+      width: min(680px, 100%);
+      border: 1px solid rgba(216, 196, 167, 0.7);
+      border-radius: 20px;
+      padding: 18px;
+      background:
+        radial-gradient(circle at top right, rgba(212, 175, 55, 0.18), transparent 28%),
+        linear-gradient(135deg, #fffdfa 0%, #fff6e6 100%);
+      box-shadow: 0 24px 60px rgba(47, 34, 18, 0.2);
+      animation: toastIn .22s ease;
+    }
+    .modal-title {
+      margin: 0 0 4px;
+      font-size: 24px;
+      font-family: "Cormorant Garamond", serif;
+    }
+    .modal-sub {
+      color: var(--sub);
+      font-size: 12px;
+      margin-bottom: 14px;
+    }
+    .modal-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+    .modal-grid .span-2 { grid-column: 1 / -1; }
+    .form-help {
+      margin-top: 4px;
+      color: var(--sub);
+      font-size: 11px;
+    }
+    .modal-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+      margin-top: 14px;
+    }
+    .modal-error {
+      margin-top: 10px;
+      min-height: 18px;
+      color: var(--bad);
+      font-size: 12px;
+    }
+    @keyframes spin {
+      from { transform: rotate(0deg); }
+      to { transform: rotate(360deg); }
+    }
     @media (max-width: 980px) {
       .grid { grid-template-columns: 1fr; }
       .head { flex-direction: column; align-items: flex-start; }
+      .metric-grid { grid-template-columns: 1fr; }
+      .modal-grid { grid-template-columns: 1fr; }
     }
   </style>
 </head>
 <body>
   <div class="wrap">
+    <div id="toast-stack" class="toast-stack"></div>
     <div class="head">
       <div>
-        <h1>Xiavier 本地控制台</h1>
+        <h1>new-api 本地控制台</h1>
         <div class="sub">一键签到、账号状态检测、余额变化跟踪、账号/API Key 管理（UI v2.1）</div>
       </div>
       <div class="bar">
@@ -182,22 +406,7 @@
 
         <div id="detail-empty" class="small">点击左侧账号查看详情。</div>
         <div id="detail-content" style="display:none;">
-          <div class="block">
-            <div><b>账号名：</b><span id="detail-name"></span></div>
-            <div><b>启用：</b><span id="detail-enabled"></span></div>
-            <div><b>new_api_user：</b><span id="detail-user" class="mono"></span></div>
-            <div><b>Session：</b><span id="detail-session" class="mono"></span></div>
-          </div>
-
-          <div class="block">
-            <div class="inline" style="justify-content:space-between;">
-              <b>API Key 列表</b>
-              <button id="btn-toggle-keys" class="secondary" style="padding:4px 8px;">显示完整</button>
-            </div>
-            <ul id="detail-keys" class="mono" style="margin:8px 0 0 16px; padding:0;"></ul>
-          </div>
-
-          <div id="detail-status" class="block"></div>
+          <div id="detail-status" class="detail-hero"></div>
         </div>
 
         <hr style="border-color:var(--line); margin:12px 0;">
@@ -236,12 +445,52 @@
     </div>
   </div>
 
+  <div id="add-modal" class="modal-shell" aria-hidden="true">
+    <div class="modal-card">
+      <h3 class="modal-title">添加账号</h3>
+      <div class="modal-sub">新建账号与编辑已有账号分开处理，避免把旧账号信息带进新建流程。</div>
+
+      <div class="modal-grid">
+        <div class="form-group">
+          <label for="m-name">账号名</label>
+          <input id="m-name" />
+          <div class="form-help">2-40 个字符，可使用中文、英文、数字、空格、`_ - .`</div>
+        </div>
+        <div class="form-group">
+          <label for="m-user">new_api_user</label>
+          <input id="m-user" inputmode="numeric" />
+          <div class="form-help">只允许数字，例如 `2659`</div>
+        </div>
+        <div class="form-group span-2">
+          <label for="m-session">Session</label>
+          <textarea id="m-session"></textarea>
+          <div class="form-help">不能为空，且不能包含空格或换行。</div>
+        </div>
+        <div class="form-group span-2">
+          <label for="m-keys">API Key（每行一个）</label>
+          <textarea id="m-keys"></textarea>
+          <div class="form-help">可选；如果填写，每行一个，单条至少 10 个字符。</div>
+        </div>
+        <div class="form-group span-2 inline">
+          <input type="checkbox" id="m-enabled" checked />
+          <label for="m-enabled" style="margin:0;">立即启用该账号</label>
+        </div>
+      </div>
+
+      <div id="modal-error" class="modal-error"></div>
+
+      <div class="modal-actions">
+        <button id="btn-modal-cancel" class="secondary">取消</button>
+        <button id="btn-modal-save">创建账号</button>
+      </div>
+    </div>
+  </div>
+
 <script>
 const state = {
   accounts: [],
   selected: null,
   editingOriginalName: null,
-  showFullKeys: false,
   checkinResults: {},
   signinStatus: {},
   statusResults: {},
@@ -254,19 +503,23 @@ const el = {
   body: document.getElementById('account-body'),
   detailEmpty: document.getElementById('detail-empty'),
   detailContent: document.getElementById('detail-content'),
-  detailName: document.getElementById('detail-name'),
-  detailEnabled: document.getElementById('detail-enabled'),
-  detailUser: document.getElementById('detail-user'),
-  detailSession: document.getElementById('detail-session'),
-  detailKeys: document.getElementById('detail-keys'),
   detailStatus: document.getElementById('detail-status'),
-  toggleKeys: document.getElementById('btn-toggle-keys'),
+  toastStack: document.getElementById('toast-stack'),
   panelTitle: document.getElementById('panel-title'),
   fName: document.getElementById('f-name'),
   fUser: document.getElementById('f-user'),
   fSession: document.getElementById('f-session'),
   fKeys: document.getElementById('f-keys'),
   fEnabled: document.getElementById('f-enabled'),
+  addModal: document.getElementById('add-modal'),
+  mName: document.getElementById('m-name'),
+  mUser: document.getElementById('m-user'),
+  mSession: document.getElementById('m-session'),
+  mKeys: document.getElementById('m-keys'),
+  mEnabled: document.getElementById('m-enabled'),
+  modalError: document.getElementById('modal-error'),
+  btnModalSave: document.getElementById('btn-modal-save'),
+  btnModalCancel: document.getElementById('btn-modal-cancel'),
   log: document.getElementById('log'),
   busy: document.getElementById('busy-line'),
   btnRefresh: document.getElementById('btn-refresh'),
@@ -281,6 +534,21 @@ function log(msg, cls = '') {
   div.className = `log-item ${cls}`;
   div.textContent = `[${ts}] ${msg}`;
   el.log.prepend(div);
+}
+
+function notify(cls, title, body = '') {
+  const div = document.createElement('div');
+  div.className = `toast ${cls || 'ok'}`;
+  div.innerHTML = `
+    <div class="toast-title">${title}</div>
+    <div class="toast-body">${body || ''}</div>
+  `;
+  el.toastStack.appendChild(div);
+  window.setTimeout(() => {
+    div.style.opacity = '0';
+    div.style.transform = 'translateY(-6px) scale(.98)';
+  }, 3200);
+  window.setTimeout(() => div.remove(), 3600);
 }
 
 function setBusyText(text = '') {
@@ -337,29 +605,124 @@ async function copyApiKeys(name) {
   const acc = state.accounts.find((a) => a.name === name);
   if (!acc) {
     log(`未找到账号：${name}`, 'bad2');
+    notify('bad2', '未找到账号', `${name} 不存在于当前列表中。`);
     return;
   }
   const keys = Array.isArray(acc.api_keys) ? acc.api_keys.filter(Boolean) : [];
   if (!keys.length) {
     log(`${name} 没有可复制的 API Key`, 'warn2');
+    notify('warn2', '没有可复制的 API Key', `${name} 当前没有保存可复制的 Key。`);
     return;
   }
   const text = keys.join('\\n');
   try {
     await navigator.clipboard.writeText(text);
     log(`${name} API Key 已复制（${keys.length} 条）`, 'ok');
+    notify('ok', '复制成功', `${name} 的 API Key 已复制到剪贴板，共 ${keys.length} 条。`);
   } catch (e) {
     log(`${name} 复制失败：${e.message || e}`, 'bad2');
+    notify('bad2', '复制失败', `${name} 的 API Key 复制失败：${e.message || e}`);
   }
-}
-
-function sessionPreview(v) {
-  if (!v) return '';
-  return v.length > 20 ? `${v.slice(0, 8)}...${v.slice(-8)}` : v;
 }
 
 function maskTag(enabled) {
   return enabled ? '<span class="tag ok">启用</span>' : '<span class="tag off">停用</span>';
+}
+
+function setFieldInvalid(node, invalid) {
+  if (!node) return;
+  node.classList.toggle('input-invalid', !!invalid);
+}
+
+function clearFieldStates(nodes) {
+  for (const node of nodes) setFieldInvalid(node, false);
+}
+
+function setEditFormDisabled(disabled) {
+  for (const node of [el.fName, el.fUser, el.fSession, el.fKeys, el.fEnabled]) {
+    node.disabled = disabled;
+  }
+  document.getElementById('btn-save').disabled = disabled;
+  document.getElementById('btn-cancel').disabled = disabled;
+  document.getElementById('btn-delete').disabled = disabled;
+}
+
+function resetModalForm() {
+  el.mName.value = '';
+  el.mUser.value = '';
+  el.mSession.value = '';
+  el.mKeys.value = '';
+  el.mEnabled.checked = true;
+  el.modalError.textContent = '';
+  clearFieldStates([el.mName, el.mUser, el.mSession, el.mKeys]);
+}
+
+function openAddModal() {
+  state.selected = null;
+  fillForm(null);
+  renderTable();
+  renderDetail();
+  resetModalForm();
+  el.addModal.classList.add('open');
+  el.addModal.setAttribute('aria-hidden', 'false');
+  window.setTimeout(() => el.mName.focus(), 30);
+}
+
+function closeAddModal() {
+  el.addModal.classList.remove('open');
+  el.addModal.setAttribute('aria-hidden', 'true');
+  el.modalError.textContent = '';
+}
+
+function buildPayloadFromInputs(fields) {
+  return {
+    name: fields.name.value.trim(),
+    new_api_user: fields.user.value.trim(),
+    session: fields.session.value.trim(),
+    api_keys: fields.keys.value,
+    enabled: !!fields.enabled.checked,
+  };
+}
+
+function validatePayload(payload, fields) {
+  const errors = [];
+  clearFieldStates([fields.name, fields.user, fields.session, fields.keys]);
+
+  if (!payload.name) {
+    errors.push('账号名不能为空');
+    setFieldInvalid(fields.name, true);
+  } else {
+    const nameOk = /^[A-Za-z0-9_\-.\u4e00-\u9fa5 ]{2,40}$/.test(payload.name);
+    if (!nameOk) {
+      errors.push('账号名需为 2-40 个字符，只允许中文、英文、数字、空格、_ - .');
+      setFieldInvalid(fields.name, true);
+    }
+  }
+
+  if (!payload.new_api_user) {
+    errors.push('new_api_user 不能为空');
+    setFieldInvalid(fields.user, true);
+  } else if (!/^\d+$/.test(payload.new_api_user)) {
+    errors.push('new_api_user 只能是数字');
+    setFieldInvalid(fields.user, true);
+  }
+
+  if (!payload.session) {
+    errors.push('Session 不能为空');
+    setFieldInvalid(fields.session, true);
+  } else if (/\s/.test(payload.session) || payload.session.length < 20) {
+    errors.push('Session 不能包含空白字符，且长度不能过短');
+    setFieldInvalid(fields.session, true);
+  }
+
+  const keyLines = payload.api_keys.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  const invalidKey = keyLines.find((line) => /\s/.test(line) || line.length < 10);
+  if (invalidKey) {
+    errors.push('API Key 每行一条，且单条不能包含空格并至少 10 个字符');
+    setFieldInvalid(fields.keys, true);
+  }
+
+  return errors;
 }
 
 function fillForm(acc = null) {
@@ -370,8 +733,9 @@ function fillForm(acc = null) {
     el.fSession.value = '';
     el.fKeys.value = '';
     el.fEnabled.checked = true;
-    document.getElementById('btn-delete').disabled = true;
-    el.panelTitle.textContent = '添加账号';
+    clearFieldStates([el.fName, el.fUser, el.fSession, el.fKeys]);
+    setEditFormDisabled(true);
+    el.panelTitle.textContent = '账号编辑';
     return;
   }
   state.editingOriginalName = acc.name;
@@ -380,20 +744,21 @@ function fillForm(acc = null) {
   el.fSession.value = acc.session || '';
   el.fKeys.value = (acc.api_keys || []).join('\n');
   el.fEnabled.checked = !!acc.enabled;
-  document.getElementById('btn-delete').disabled = false;
+  clearFieldStates([el.fName, el.fUser, el.fSession, el.fKeys]);
+  setEditFormDisabled(false);
   el.panelTitle.textContent = `编辑账号：${acc.name}`;
 }
 
 function renderRowSummary(name) {
   if (state.pendingAccounts[name]) {
     return {
-      checkinText: state.pendingAccounts[name] === 'checkin' ? '处理中...' : (state.signinStatus[name] || '未知'),
+      checkinText: state.pendingAccounts[name] === 'checkin' ? '处理中...' : (state.signinStatus[name] || '未签到'),
       statusText: state.pendingAccounts[name] === 'status' ? '处理中...' : '-',
     };
   }
 
   const s = state.statusResults[name];
-  const checkinText = state.signinStatus[name] || '未知';
+  const checkinText = state.signinStatus[name] || '未签到';
   let statusText = '-';
   if (s) {
     if (s.status_state === 'VALID') statusText = '有效';
@@ -415,6 +780,11 @@ function renderTable() {
 
     const running = !!state.pendingAccounts[acc.name];
     const rowSum = renderRowSummary(acc.name);
+    const activeAction = state.pendingAccounts[acc.name];
+    const checkinLabel = activeAction === 'checkin' ? '签到中' : '签到';
+    const statusLabel = activeAction === 'status' ? '检测中' : '检测';
+    const toggleLabel = activeAction === 'toggle' ? '处理中' : (acc.enabled ? '停用' : '启用');
+    const deleteLabel = activeAction === 'delete' ? '处理中' : '删除';
 
     tr.innerHTML = `
       <td>${acc.name || ''}</td>
@@ -425,11 +795,11 @@ function renderTable() {
       <td>
         <div class="row-actions">
           <button data-action="copy" data-name="${acc.name}" class="secondary" ${running ? 'disabled' : ''}>复制APIKey</button>
-          <button data-action="checkin" data-name="${acc.name}" ${running ? 'disabled' : ''}>签到</button>
-          <button data-action="status" data-name="${acc.name}" class="secondary" ${running ? 'disabled' : ''}>检测</button>
+          <button data-action="checkin" data-name="${acc.name}" class="${activeAction === 'checkin' ? 'busy-button' : ''}" ${running ? 'disabled' : ''}>${checkinLabel}</button>
+          <button data-action="status" data-name="${acc.name}" class="secondary ${activeAction === 'status' ? 'busy-button' : ''}" ${running ? 'disabled' : ''}>${statusLabel}</button>
           <button data-action="edit" data-name="${acc.name}" class="warn" ${running ? 'disabled' : ''}>编辑</button>
-          <button data-action="toggle" data-name="${acc.name}" class="secondary" ${running ? 'disabled' : ''}>${acc.enabled ? '停用' : '启用'}</button>
-          <button data-action="delete" data-name="${acc.name}" class="bad" ${running ? 'disabled' : ''}>删除</button>
+          <button data-action="toggle" data-name="${acc.name}" class="secondary ${activeAction === 'toggle' ? 'busy-button' : ''}" ${running ? 'disabled' : ''}>${toggleLabel}</button>
+          <button data-action="delete" data-name="${acc.name}" class="bad ${activeAction === 'delete' ? 'busy-button' : ''}" ${running ? 'disabled' : ''}>${deleteLabel}</button>
         </div>
       </td>
     `;
@@ -449,13 +819,26 @@ function renderTable() {
       if (action === 'checkin') await withAccountBusy(name, 'checkin', () => checkinOne(name));
       if (action === 'status') await withAccountBusy(name, 'status', () => statusOne(name));
       if (action === 'edit') {
-        const acc = state.accounts.find((a) => a.name === name);
-        fillForm(acc || null);
+        selectAccount(name);
       }
       if (action === 'toggle') await withAccountBusy(name, 'toggle', () => toggleOne(name));
       if (action === 'delete') await withAccountBusy(name, 'delete', () => deleteOne(name));
     });
   }
+}
+
+function metricTone(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return 'metric-neutral';
+  if (n > 0) return 'metric-positive';
+  if (n < 0) return 'metric-negative';
+  return 'metric-neutral';
+}
+
+function flashDetail() {
+  el.detailStatus.classList.remove('flash');
+  void el.detailStatus.offsetWidth;
+  el.detailStatus.classList.add('flash');
 }
 
 function renderDetail() {
@@ -469,55 +852,47 @@ function renderDetail() {
   el.detailContent.style.display = 'block';
 
   const acc = state.selected;
-  el.detailName.textContent = acc.name || '';
-  el.detailEnabled.textContent = acc.enabled ? 'true' : 'false';
-  el.detailUser.textContent = acc.new_api_user || '';
-  el.detailSession.textContent = sessionPreview(acc.session || '');
-
-  el.detailKeys.innerHTML = '';
-  const keys = state.showFullKeys ? (acc.api_keys || []) : (acc.api_keys_masked || []);
-  if (!keys.length) {
-    const li = document.createElement('li');
-    li.textContent = '(未保存 API Key)';
-    el.detailKeys.appendChild(li);
-  } else {
-    for (const k of keys) {
-      const li = document.createElement('li');
-      li.textContent = k;
-      el.detailKeys.appendChild(li);
-    }
-  }
-
   const sr = state.statusResults[acc.name];
-  const signState = state.signinStatus[acc.name] || '未知';
-  if (!sr) {
-    el.detailStatus.innerHTML = `<b>账号状态：</b>尚未检测<br><b>今日签到状态：</b>${signState}`;
-  } else if (sr.status_state === 'NETWORK_ERROR') {
-    el.detailStatus.innerHTML = `<b>账号状态：</b><span class="warn2">网络异常</span> ${sr.api_error || ''}<br><b>今日签到状态：</b>${signState}`;
-  } else if (sr.status_state === 'VERIFICATION_REQUIRED') {
-    el.detailStatus.innerHTML = `<b>账号状态：</b><span class="warn2">需要验证</span> ${sr.api_error || ''}<br><b>今日签到状态：</b>${signState}`;
-  } else if (sr.status_state === 'INVALID_SESSION') {
-    el.detailStatus.innerHTML = `<b>账号状态：</b><span class="bad2">会话失效</span> ${sr.api_error || ''}<br><b>今日签到状态：</b>${signState}`;
-  } else if (sr.status_state !== 'VALID') {
-    el.detailStatus.innerHTML = `<b>账号状态：</b><span class="bad2">接口异常</span> ${sr.api_error || ''}<br><b>今日签到状态：</b>${signState}`;
-  } else {
-    const q = sr.quota || {};
-    const delta = sr.quota_delta || {};
-    const sys = (sr && sr.system_status) || state.systemStatus;
+  const signState = state.signinStatus[acc.name] || '未签到';
+  const identity = sr?.identity || {};
+  const sys = sr?.system_status || state.systemStatus;
+  const q = sr?.quota || {};
+  const delta = sr?.quota_delta || {};
+  const yesterday = sr?.yesterday_delta || {};
+  const currentMoney = sr?.session_valid ? quotaToMoney(q.quota, sys) : null;
+  const changeMoney = sr?.session_valid ? quotaToMoney(delta.change_from_previous, sys) : null;
+  const yesterdayMoney = sr?.session_valid ? quotaToMoney(yesterday.change_from_yesterday_last, sys) : null;
+  const prevTime = formatShortTs(delta.previous_timestamp);
+  const sourceTip = sr?.quota_source === 'cache' ? '（当前额度取自上次缓存记录）' : '';
 
-    const currentMoney = quotaToMoney(q.quota, sys);
-    const changeMoney = quotaToMoney(delta.change_from_previous, sys);
-    const prevTime = formatShortTs(delta.previous_timestamp);
-    const sourceTip = sr.quota_source === 'cache' ? '（接口未返回余额，使用上次记录）' : '';
-
-    el.detailStatus.innerHTML = `
-      <div><b>账号状态：</b><span class="ok">有效</span></div>
-      <div><b>今日签到状态：</b>${signState}</div>
-      <div><b>当前额度：</b>${formatMoney(currentMoney, sys)}</div>
-      <div><b>与上次检测相比：</b>${formatMoney(changeMoney, sys, true)}</div>
-      <div class="small"><b>上次检测时间：</b>${prevTime} ${sourceTip}</div>
-    `;
-  }
+  el.detailStatus.innerHTML = `
+    <div class="hero-title">
+      <div>
+        <div class="hero-name">${acc.name || '-'}</div>
+        <div class="hero-email">${identity.email || '未检测到邮箱信息'}</div>
+      </div>
+    </div>
+    <div class="hero-badges">
+      <span class="hero-badge">启用：${acc.enabled ? '是' : '否'}</span>
+      <span class="hero-badge">今日签到：${signState}</span>
+    </div>
+    <div class="metric-grid">
+      <div class="metric-card">
+        <div class="metric-label">当前额度</div>
+        <div class="metric-value">${formatMoney(currentMoney, sys)}</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-label">与上次检测时相比</div>
+        <div class="metric-value ${metricTone(changeMoney)}">${formatMoney(changeMoney, sys, true)}</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-label">与昨天最后一次检测时相比</div>
+        <div class="metric-value ${metricTone(yesterdayMoney)}">${formatMoney(yesterdayMoney, sys, true)}</div>
+      </div>
+    </div>
+    <div class="small" style="margin-top:12px;">上次检测时间：${prevTime}${sourceTip}</div>
+  `;
+  flashDetail();
 
   // Always sync editor with the selected account to avoid stale edit form.
   fillForm(acc);
@@ -525,8 +900,6 @@ function renderDetail() {
 
 function selectAccount(name) {
   state.selected = state.accounts.find((a) => a.name === name) || null;
-  state.showFullKeys = false;
-  el.toggleKeys.textContent = '显示完整';
   if (state.selected) {
     fillForm(state.selected);
   }
@@ -538,28 +911,48 @@ async function refreshAccounts() {
   const data = await api('/api/accounts');
   state.accounts = data.accounts || [];
   state.signinStatus = {};
+  state.statusResults = {};
   for (const acc of state.accounts) {
-    state.signinStatus[acc.name] = acc.signin_status || '未知';
+    state.signinStatus[acc.name] = acc.signin_status || '未签到';
+    if (acc.last_status && typeof acc.last_status === 'object') {
+      state.statusResults[acc.name] = acc.last_status;
+    }
   }
   if (state.selected) state.selected = state.accounts.find((a) => a.name === state.selected.name) || null;
   renderTable();
   renderDetail();
 }
 
-async function withGlobalBusy(text, fn) {
+function setButtonBusy(button, busy, busyText = '') {
+  if (!button) return;
+  if (busy) {
+    if (!button.dataset.label) button.dataset.label = button.textContent;
+    button.textContent = busyText || button.textContent;
+    button.classList.add('busy-button');
+    button.disabled = true;
+    return;
+  }
+  button.textContent = button.dataset.label || button.textContent;
+  button.classList.remove('busy-button');
+  button.disabled = false;
+}
+
+async function withGlobalBusy(text, button, busyText, fn) {
   if (state.pendingGlobal) return;
   state.pendingGlobal = true;
-  el.btnRefresh.disabled = true;
-  el.btnCheckinAll.disabled = true;
-  el.btnStatusAll.disabled = true;
+  setButtonBusy(button, true, busyText);
+  for (const btn of [el.btnRefresh, el.btnCheckinAll, el.btnStatusAll, el.btnNew]) {
+    if (btn !== button) btn.disabled = true;
+  }
   setBusyText(`正在执行：${text}`);
   try {
     await fn();
   } finally {
     state.pendingGlobal = false;
-    el.btnRefresh.disabled = false;
-    el.btnCheckinAll.disabled = false;
-    el.btnStatusAll.disabled = false;
+    setButtonBusy(button, false);
+    for (const btn of [el.btnRefresh, el.btnCheckinAll, el.btnStatusAll, el.btnNew]) {
+      if (btn !== button) btn.disabled = false;
+    }
     setBusyText('');
   }
 }
@@ -580,21 +973,26 @@ async function withAccountBusy(name, action, fn) {
 }
 
 async function checkinOne(name) {
+  notify('warn2', '开始签到', `${name} 正在执行签到。`);
   const data = await api(`/api/accounts/${encodeURIComponent(name)}/checkin`, { method: 'POST', body: '{}' });
   state.checkinResults[name] = data.result;
   if (data.result.state === 'FAILED') {
-    state.signinStatus[name] = '失败';
+    state.signinStatus[name] = '未签到';
     log(`${name} 签到失败：${data.result.message || ''}`, 'bad2');
+    notify('bad2', '签到失败', `${name}：${data.result.message || '未知原因'}`);
   } else if (data.result.state === 'ALREADY_SIGNED') {
     state.signinStatus[name] = '已签到';
     log(`${name} 今日已签到`, 'warn2');
+    notify('warn2', '今日已签到', `${name} 今天已经完成签到。`);
   } else {
     state.signinStatus[name] = '已签到';
     log(`${name} 签到成功`, 'ok');
+    notify('ok', '签到成功', `${name} 已成功签到。`);
   }
 }
 
 async function statusOne(name) {
+  notify('warn2', '开始检测', `${name} 正在更新余额与状态信息。`);
   const data = await api(`/api/accounts/${encodeURIComponent(name)}/status`, { method: 'POST', body: '{}' });
   state.statusResults[name] = data.result;
   state.systemStatus = data.system_status || state.systemStatus;
@@ -607,37 +1005,53 @@ async function statusOne(name) {
     const currentMoney = quotaToMoney(q.quota, sys);
     const changeMoney = quotaToMoney(dc.change_from_previous, sys);
     log(`${name} 检测成功：额度=${formatMoney(currentMoney, sys)}，与上次相比=${formatMoney(changeMoney, sys, true)}`, 'ok');
+    notify('ok', '检测完成', `${name} 当前额度 ${formatMoney(currentMoney, sys)}，与上次相比 ${formatMoney(changeMoney, sys, true)}。`);
   } else if (r.status_state === 'NETWORK_ERROR') {
     log(`${name} 检测网络异常：${r.api_error || ''}`, 'warn2');
+    notify('warn2', '检测网络异常', `${name}：${r.api_error || '网络请求失败'}`);
   } else if (r.status_state === 'VERIFICATION_REQUIRED') {
     log(`${name} 需要验证：${r.api_error || ''}`, 'warn2');
+    notify('warn2', '需要额外验证', `${name}：${r.api_error || '需要验证码或验证步骤'}`);
   } else if (r.status_state === 'INVALID_SESSION') {
     log(`${name} 会话失效：${r.api_error || ''}`, 'bad2');
+    notify('bad2', '会话失效', `${name}：${r.api_error || 'Session 可能已过期'}`);
   } else {
     log(`${name} 检测失败：${r.api_error || ''}`, 'bad2');
+    notify('bad2', '检测失败', `${name}：${r.api_error || '接口返回异常'}`);
   }
 }
 
 async function checkinAll() {
+  notify('warn2', '开始全部签到', '正在批量执行签到，请稍候。');
   const data = await api('/api/accounts/checkin-all', { method: 'POST', body: '{}' });
+  let okCount = 0;
+  let alreadyCount = 0;
+  let unsignedCount = 0;
   for (const r of data.results || []) {
     state.checkinResults[r.account] = r;
     if (r.state === 'FAILED') {
-      state.signinStatus[r.account] = '失败';
+      state.signinStatus[r.account] = '未签到';
       log(`${r.account} 签到失败：${r.message || ''}`, 'bad2');
+      unsignedCount += 1;
     } else if (r.state === 'ALREADY_SIGNED') {
       state.signinStatus[r.account] = '已签到';
       log(`${r.account} 今日已签到`, 'warn2');
+      alreadyCount += 1;
     } else {
       state.signinStatus[r.account] = '已签到';
       log(`${r.account} 签到成功`, 'ok');
+      okCount += 1;
     }
   }
+  notify('ok', '全部签到完成', `成功 ${okCount} 个，已签到 ${alreadyCount} 个，未签到 ${unsignedCount} 个。`);
 }
 
 async function statusAll() {
+  notify('warn2', '开始全部检测', '正在批量更新账号余额与状态。');
   const data = await api('/api/accounts/status-all', { method: 'POST', body: '{}' });
   state.systemStatus = data.system_status || state.systemStatus;
+  let validCount = 0;
+  let failCount = 0;
   for (const r of data.results || []) {
     state.statusResults[r.account] = r;
     if (r.session_valid) {
@@ -647,43 +1061,87 @@ async function statusAll() {
       const currentMoney = quotaToMoney(q.quota, sys);
       const changeMoney = quotaToMoney(dc.change_from_previous, sys);
       log(`${r.account} 检测成功：额度=${formatMoney(currentMoney, sys)}，与上次相比=${formatMoney(changeMoney, sys, true)}`, 'ok');
+      validCount += 1;
     } else if (r.status_state === 'NETWORK_ERROR') {
       log(`${r.account} 检测网络异常：${r.api_error || ''}`, 'warn2');
+      failCount += 1;
     } else if (r.status_state === 'VERIFICATION_REQUIRED') {
       log(`${r.account} 需要验证：${r.api_error || ''}`, 'warn2');
+      failCount += 1;
     } else if (r.status_state === 'INVALID_SESSION') {
       log(`${r.account} 会话失效：${r.api_error || ''}`, 'bad2');
+      failCount += 1;
     } else {
       log(`${r.account} 检测失败：${r.api_error || ''}`, 'bad2');
+      failCount += 1;
     }
   }
+  notify('ok', '全部检测完成', `有效 ${validCount} 个，异常 ${failCount} 个。`);
 }
 
 async function saveForm() {
-  const payload = {
-    name: el.fName.value.trim(),
-    new_api_user: el.fUser.value.trim(),
-    session: el.fSession.value.trim(),
-    api_keys: el.fKeys.value,
-    enabled: el.fEnabled.checked,
-  };
-
-  if (!payload.name || !payload.new_api_user || !payload.session) {
-    log('账号名 / new_api_user / session 不能为空', 'bad2');
+  if (!state.editingOriginalName) {
+    notify('warn2', '未选择账号', '右侧只用于编辑已选择的账号；新建请点击顶部“添加账号”。');
+    return;
+  }
+  const payload = buildPayloadFromInputs({
+    name: el.fName,
+    user: el.fUser,
+    session: el.fSession,
+    keys: el.fKeys,
+    enabled: el.fEnabled,
+  });
+  const errors = validatePayload(payload, {
+    name: el.fName,
+    user: el.fUser,
+    session: el.fSession,
+    keys: el.fKeys,
+    enabled: el.fEnabled,
+  });
+  if (errors.length) {
+    const message = errors[0];
+    log(`保存失败：${message}`, 'bad2');
+    notify('bad2', '保存失败', message);
     return;
   }
 
-  if (!state.editingOriginalName) {
-    await api('/api/accounts', { method: 'POST', body: JSON.stringify(payload) });
-    log(`已添加账号：${payload.name}`, 'ok');
-  } else {
-    await api(`/api/accounts/${encodeURIComponent(state.editingOriginalName)}`, { method: 'PUT', body: JSON.stringify(payload) });
-    log(`已更新账号：${state.editingOriginalName} -> ${payload.name}`, 'ok');
-  }
+  await api(`/api/accounts/${encodeURIComponent(state.editingOriginalName)}`, { method: 'PUT', body: JSON.stringify(payload) });
+  log(`已更新账号：${state.editingOriginalName} -> ${payload.name}`, 'ok');
+  notify('ok', '账号已更新', `${state.editingOriginalName} 已更新为 ${payload.name}。`);
 
   await refreshAccounts();
   selectAccount(payload.name);
   fillForm(state.selected);
+}
+
+async function saveNewAccount() {
+  const payload = buildPayloadFromInputs({
+    name: el.mName,
+    user: el.mUser,
+    session: el.mSession,
+    keys: el.mKeys,
+    enabled: el.mEnabled,
+  });
+  const errors = validatePayload(payload, {
+    name: el.mName,
+    user: el.mUser,
+    session: el.mSession,
+    keys: el.mKeys,
+    enabled: el.mEnabled,
+  });
+  if (errors.length) {
+    el.modalError.textContent = errors[0];
+    notify('bad2', '创建失败', errors[0]);
+    return;
+  }
+
+  el.modalError.textContent = '';
+  await api('/api/accounts', { method: 'POST', body: JSON.stringify(payload) });
+  log(`已添加账号：${payload.name}`, 'ok');
+  notify('ok', '账号已添加', `${payload.name} 已加入列表。`);
+  closeAddModal();
+  await refreshAccounts();
+  selectAccount(payload.name);
 }
 
 async function deleteOne(name) {
@@ -696,6 +1154,7 @@ async function deleteOne(name) {
     fillForm(null);
   }
   log(`已删除账号：${name}`, 'ok');
+  notify('ok', '账号已删除', `${name} 已从本地控制台移除。`);
   await refreshAccounts();
 }
 
@@ -711,47 +1170,69 @@ async function toggleOne(name) {
   };
   await api(`/api/accounts/${encodeURIComponent(name)}`, { method: 'PUT', body: JSON.stringify(payload) });
   log(`账号 ${name} 已${payload.enabled ? '启用' : '停用'}`, 'ok');
+  notify('ok', payload.enabled ? '账号已启用' : '账号已停用', `${name} 当前状态：${payload.enabled ? '启用' : '停用'}。`);
   await refreshAccounts();
   if (state.selected && state.selected.name === name) selectAccount(name);
 }
 
-el.btnRefresh.addEventListener('click', () => withGlobalBusy('刷新账号', async () => {
+el.btnRefresh.addEventListener('click', () => withGlobalBusy('刷新账号', el.btnRefresh, '刷新中', async () => {
   await refreshAccounts();
   log('账号列表已刷新', 'ok');
+  notify('ok', '列表已刷新', '账号列表和本地状态已经更新。');
 }).catch(e => log(e.message, 'bad2')));
 
-el.btnCheckinAll.addEventListener('click', () => withGlobalBusy('全部签到', async () => {
+el.btnCheckinAll.addEventListener('click', () => withGlobalBusy('全部签到', el.btnCheckinAll, '签到中', async () => {
   await checkinAll();
   renderTable();
 }).catch(e => log(e.message, 'bad2')));
 
-el.btnStatusAll.addEventListener('click', () => withGlobalBusy('全部检测', async () => {
+el.btnStatusAll.addEventListener('click', () => withGlobalBusy('全部检测', el.btnStatusAll, '检测中', async () => {
   await statusAll();
   renderTable();
   renderDetail();
 }).catch(e => log(e.message, 'bad2')));
 
-document.getElementById('btn-new').addEventListener('click', () => fillForm(null));
-document.getElementById('btn-save').addEventListener('click', () => withGlobalBusy('保存账号', saveForm).catch(e => log(e.message, 'bad2')));
+document.getElementById('btn-new').addEventListener('click', () => openAddModal());
+document.getElementById('btn-save').addEventListener('click', () => withGlobalBusy('保存账号', document.getElementById('btn-save'), '保存中', saveForm).catch(e => log(e.message, 'bad2')));
 document.getElementById('btn-cancel').addEventListener('click', () => {
   if (state.selected) fillForm(state.selected);
   else fillForm(null);
 });
 document.getElementById('btn-delete').addEventListener('click', () => {
   if (!state.editingOriginalName) return;
-  withGlobalBusy('删除账号', () => deleteOne(state.editingOriginalName)).catch(e => log(e.message, 'bad2'));
+  withGlobalBusy('删除账号', document.getElementById('btn-delete'), '删除中', () => deleteOne(state.editingOriginalName)).catch(e => log(e.message, 'bad2'));
 });
-
-el.toggleKeys.addEventListener('click', () => {
-  state.showFullKeys = !state.showFullKeys;
-  el.toggleKeys.textContent = state.showFullKeys ? '隐藏完整' : '显示完整';
-  renderDetail();
+el.btnModalCancel.addEventListener('click', () => closeAddModal());
+el.btnModalSave.addEventListener('click', () => withGlobalBusy('创建账号', el.btnModalSave, '创建中', saveNewAccount).catch(e => {
+  el.modalError.textContent = e.message || String(e);
+  notify('bad2', '创建失败', e.message || String(e));
+  log(e.message || String(e), 'bad2');
+}));
+el.addModal.addEventListener('click', (e) => {
+  if (e.target === el.addModal) closeAddModal();
 });
+window.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && el.addModal.classList.contains('open')) {
+    closeAddModal();
+  }
+});
+for (const node of [el.fName, el.fUser, el.fSession, el.fKeys, el.mName, el.mUser, el.mSession, el.mKeys]) {
+  node.addEventListener('input', () => {
+    setFieldInvalid(node, false);
+    if ([el.mName, el.mUser, el.mSession, el.mKeys].includes(node)) {
+      el.modalError.textContent = '';
+    }
+  });
+}
 
 fillForm(null);
 Promise.all([refreshAccounts()])
-  .then(() => log('页面已就绪', 'ok'))
+  .then(() => {
+    log('页面已就绪', 'ok');
+    notify('ok', '页面已就绪', '可以直接选择账号、签到或检测余额变化。');
+  })
   .catch(e => log(e.message, 'bad2'));
 </script>
 </body>
 </html>
+

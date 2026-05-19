@@ -6,9 +6,7 @@ __pycache__/
 .idea/
 
 # Local runtime/state files
-session.json
-quota_history.json
-signin_status.json
+data/
 
 # Logs
 *.log
