@@ -417,6 +417,10 @@
           <input id="f-name" />
         </div>
         <div class="form-group">
+          <label for="f-base-url">域名地址(base_url)</label>
+          <input id="f-base-url" placeholder="https://example.com" />
+        </div>
+        <div class="form-group">
           <label for="f-user">new_api_user</label>
           <input id="f-user" />
         </div>
@@ -457,6 +461,11 @@
           <div class="form-help">2-40 个字符，可使用中文、英文、数字、空格、`_ - .`</div>
         </div>
         <div class="form-group">
+          <label for="m-base-url">域名地址(base_url)</label>
+          <input id="m-base-url" placeholder="https://example.com" />
+          <div class="form-help">必填；支持完整 URL，未写协议时会自动补全为 `https://`。</div>
+        </div>
+        <div class="form-group">
           <label for="m-user">new_api_user</label>
           <input id="m-user" inputmode="numeric" />
           <div class="form-help">只允许数字，例如 `2659`</div>
@@ -491,6 +500,7 @@ const state = {
   accounts: [],
   selected: null,
   editingOriginalName: null,
+  defaultBaseUrl: 'https://www.new-api.com',
   checkinResults: {},
   signinStatus: {},
   statusResults: {},
@@ -507,12 +517,14 @@ const el = {
   toastStack: document.getElementById('toast-stack'),
   panelTitle: document.getElementById('panel-title'),
   fName: document.getElementById('f-name'),
+  fBaseUrl: document.getElementById('f-base-url'),
   fUser: document.getElementById('f-user'),
   fSession: document.getElementById('f-session'),
   fKeys: document.getElementById('f-keys'),
   fEnabled: document.getElementById('f-enabled'),
   addModal: document.getElementById('add-modal'),
   mName: document.getElementById('m-name'),
+  mBaseUrl: document.getElementById('m-base-url'),
   mUser: document.getElementById('m-user'),
   mSession: document.getElementById('m-session'),
   mKeys: document.getElementById('m-keys'),
@@ -639,7 +651,7 @@ function clearFieldStates(nodes) {
 }
 
 function setEditFormDisabled(disabled) {
-  for (const node of [el.fName, el.fUser, el.fSession, el.fKeys, el.fEnabled]) {
+  for (const node of [el.fName, el.fBaseUrl, el.fUser, el.fSession, el.fKeys, el.fEnabled]) {
     node.disabled = disabled;
   }
   document.getElementById('btn-save').disabled = disabled;
@@ -649,12 +661,13 @@ function setEditFormDisabled(disabled) {
 
 function resetModalForm() {
   el.mName.value = '';
+  el.mBaseUrl.value = state.defaultBaseUrl || '';
   el.mUser.value = '';
   el.mSession.value = '';
   el.mKeys.value = '';
   el.mEnabled.checked = true;
   el.modalError.textContent = '';
-  clearFieldStates([el.mName, el.mUser, el.mSession, el.mKeys]);
+  clearFieldStates([el.mName, el.mBaseUrl, el.mUser, el.mSession, el.mKeys]);
 }
 
 function openAddModal() {
@@ -677,6 +690,7 @@ function closeAddModal() {
 function buildPayloadFromInputs(fields) {
   return {
     name: fields.name.value.trim(),
+    base_url: fields.baseUrl.value.trim(),
     new_api_user: fields.user.value.trim(),
     session: fields.session.value.trim(),
     api_keys: fields.keys.value,
@@ -686,7 +700,7 @@ function buildPayloadFromInputs(fields) {
 
 function validatePayload(payload, fields) {
   const errors = [];
-  clearFieldStates([fields.name, fields.user, fields.session, fields.keys]);
+  clearFieldStates([fields.name, fields.baseUrl, fields.user, fields.session, fields.keys]);
 
   if (!payload.name) {
     errors.push('账号名不能为空');
@@ -705,6 +719,17 @@ function validatePayload(payload, fields) {
   } else if (!/^\d+$/.test(payload.new_api_user)) {
     errors.push('new_api_user 只能是数字');
     setFieldInvalid(fields.user, true);
+  }
+
+  if (!payload.base_url) {
+    errors.push('域名地址(base_url)不能为空');
+    setFieldInvalid(fields.baseUrl, true);
+  } else {
+    const baseUrlOk = /^(https?:\/\/)?[A-Za-z0-9.-]+(?::\d+)?(\/.*)?$/.test(payload.base_url);
+    if (!baseUrlOk) {
+      errors.push('域名地址(base_url)格式不正确');
+      setFieldInvalid(fields.baseUrl, true);
+    }
   }
 
   if (!payload.session) {
@@ -729,22 +754,24 @@ function fillForm(acc = null) {
   if (!acc) {
     state.editingOriginalName = null;
     el.fName.value = '';
+    el.fBaseUrl.value = '';
     el.fUser.value = '';
     el.fSession.value = '';
     el.fKeys.value = '';
     el.fEnabled.checked = true;
-    clearFieldStates([el.fName, el.fUser, el.fSession, el.fKeys]);
+    clearFieldStates([el.fName, el.fBaseUrl, el.fUser, el.fSession, el.fKeys]);
     setEditFormDisabled(true);
     el.panelTitle.textContent = '账号编辑';
     return;
   }
   state.editingOriginalName = acc.name;
   el.fName.value = acc.name || '';
+  el.fBaseUrl.value = acc.base_url || state.defaultBaseUrl || '';
   el.fUser.value = acc.new_api_user || '';
   el.fSession.value = acc.session || '';
   el.fKeys.value = (acc.api_keys || []).join('\n');
   el.fEnabled.checked = !!acc.enabled;
-  clearFieldStates([el.fName, el.fUser, el.fSession, el.fKeys]);
+  clearFieldStates([el.fName, el.fBaseUrl, el.fUser, el.fSession, el.fKeys]);
   setEditFormDisabled(false);
   el.panelTitle.textContent = `编辑账号：${acc.name}`;
 }
@@ -875,6 +902,7 @@ function renderDetail() {
     <div class="hero-badges">
       <span class="hero-badge">启用：${acc.enabled ? '是' : '否'}</span>
       <span class="hero-badge">今日签到：${signState}</span>
+      <span class="hero-badge mono">地址：${acc.base_url || '-'}</span>
     </div>
     <div class="metric-grid">
       <div class="metric-card">
@@ -910,6 +938,7 @@ function selectAccount(name) {
 async function refreshAccounts() {
   const data = await api('/api/accounts');
   state.accounts = data.accounts || [];
+  state.defaultBaseUrl = data.default_base_url || state.defaultBaseUrl;
   state.signinStatus = {};
   state.statusResults = {};
   for (const acc of state.accounts) {
@@ -1086,6 +1115,7 @@ async function saveForm() {
   }
   const payload = buildPayloadFromInputs({
     name: el.fName,
+    baseUrl: el.fBaseUrl,
     user: el.fUser,
     session: el.fSession,
     keys: el.fKeys,
@@ -1093,6 +1123,7 @@ async function saveForm() {
   });
   const errors = validatePayload(payload, {
     name: el.fName,
+    baseUrl: el.fBaseUrl,
     user: el.fUser,
     session: el.fSession,
     keys: el.fKeys,
@@ -1117,6 +1148,7 @@ async function saveForm() {
 async function saveNewAccount() {
   const payload = buildPayloadFromInputs({
     name: el.mName,
+    baseUrl: el.mBaseUrl,
     user: el.mUser,
     session: el.mSession,
     keys: el.mKeys,
@@ -1124,6 +1156,7 @@ async function saveNewAccount() {
   });
   const errors = validatePayload(payload, {
     name: el.mName,
+    baseUrl: el.mBaseUrl,
     user: el.mUser,
     session: el.mSession,
     keys: el.mKeys,
@@ -1163,6 +1196,7 @@ async function toggleOne(name) {
   if (!acc) return;
   const payload = {
     name: acc.name,
+    base_url: acc.base_url,
     new_api_user: acc.new_api_user,
     session: acc.session,
     api_keys: acc.api_keys || [],
@@ -1216,10 +1250,10 @@ window.addEventListener('keydown', (e) => {
     closeAddModal();
   }
 });
-for (const node of [el.fName, el.fUser, el.fSession, el.fKeys, el.mName, el.mUser, el.mSession, el.mKeys]) {
+for (const node of [el.fName, el.fBaseUrl, el.fUser, el.fSession, el.fKeys, el.mName, el.mBaseUrl, el.mUser, el.mSession, el.mKeys]) {
   node.addEventListener('input', () => {
     setFieldInvalid(node, false);
-    if ([el.mName, el.mUser, el.mSession, el.mKeys].includes(node)) {
+    if ([el.mName, el.mBaseUrl, el.mUser, el.mSession, el.mKeys].includes(node)) {
       el.modalError.textContent = '';
     }
   });

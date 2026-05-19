@@ -20,7 +20,8 @@ CONFIG_PATH = DATA_DIR / "session.json"
 HISTORY_PATH = DATA_DIR / "quota_history.json"
 SIGNIN_PATH = DATA_DIR / "signin_status.json"
 STATUS_CACHE_PATH = DATA_DIR / "status_cache.json"
-BASE_URL = "https://www.new-api.com"
+DEFAULT_BASE_URL = "https://www.new-api.com"
+BASE_URL_ENV_KEY = "NEW_API_BASE_URL"
 CHECKIN_PATH = "/api/user/checkin"
 SELF_PATH = "/api/user/self"
 STATUS_PATH = "/api/status"
@@ -28,8 +29,6 @@ TIMEOUT_SECONDS = 20
 DEFAULT_HEADERS = {
     "accept": "application/json, text/plain, */*",
     "cache-control": "no-store",
-    "origin": "https://www.new-api.com",
-    "referer": "https://www.new-api.com/console/personal",
     "sec-fetch-dest": "empty",
     "sec-fetch-mode": "cors",
     "sec-fetch-site": "same-origin",
@@ -78,6 +77,43 @@ def ensure_data_layout() -> None:
         os.replace(legacy_path, new_path)
 
 
+def normalize_base_url(raw: str) -> str:
+    value = str(raw or "").strip()
+    if not value:
+        return DEFAULT_BASE_URL
+    if not value.startswith(("http://", "https://")):
+        value = f"https://{value}"
+    return value.rstrip("/")
+
+
+def get_config_base_url_value() -> str | None:
+    ensure_data_layout()
+    if not CONFIG_PATH.exists():
+        return None
+    try:
+        with CONFIG_PATH.open("r", encoding="utf-8") as f:
+            data = json.load(f)
+    except Exception:
+        return None
+    if not isinstance(data, dict):
+        return None
+    raw = data.get("base_url")
+    if not isinstance(raw, str):
+        return None
+    raw = raw.strip()
+    return raw if raw else None
+
+
+def get_base_url() -> str:
+    env_value = str(os.getenv(BASE_URL_ENV_KEY, "") or "").strip()
+    if env_value:
+        return normalize_base_url(env_value)
+    config_value = get_config_base_url_value()
+    if config_value:
+        return normalize_base_url(config_value)
+    return DEFAULT_BASE_URL
+
+
 def now_ts() -> str:
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
@@ -104,6 +140,7 @@ def parse_api_keys(raw: Any) -> list[str]:
 
 def validate_account_fields(
     name: str,
+    base_url: str,
     new_api_user: str,
     session_value: str,
     api_keys: list[str],
@@ -120,6 +157,11 @@ def validate_account_fields(
             if "\u4e00" <= ch <= "\u9fff":
                 continue
             raise ValueError("name contains unsupported characters")
+
+    if not base_url:
+        raise ValueError("base_url is required")
+    if not base_url.startswith(("http://", "https://")):
+        raise ValueError("base_url must start with http:// or https://")
 
     if not new_api_user:
         raise ValueError("new_api_user is required")
@@ -140,8 +182,15 @@ def validate_account_fields(
             raise ValueError("api_keys entry looks too short")
 
 
-def normalize_account(account: dict[str, Any]) -> dict[str, Any]:
+def normalize_account(account: dict[str, Any], fallback_base_url: str | None = None) -> dict[str, Any]:
     normalized = dict(account)
+    account_base = str(normalized.get("base_url") or "").strip()
+    if account_base:
+        normalized["base_url"] = normalize_base_url(account_base)
+    elif fallback_base_url:
+        normalized["base_url"] = normalize_base_url(fallback_base_url)
+    else:
+        normalized["base_url"] = DEFAULT_BASE_URL
     normalized["name"] = str(normalized.get("name") or "").strip()
     normalized["enabled"] = bool(normalized.get("enabled", True))
     normalized["new_api_user"] = str(normalized.get("new_api_user") or "").strip()
@@ -154,6 +203,7 @@ def normalize_config(data: dict[str, Any]) -> tuple[dict[str, Any], bool]:
     normalized = dict(data)
     raw_accounts = data.get("accounts", [])
     changed = False
+    top_level_base_url = normalize_base_url(str(data.get("base_url") or "").strip() or DEFAULT_BASE_URL)
 
     if not isinstance(raw_accounts, list):
         raw_accounts = []
@@ -164,10 +214,14 @@ def normalize_config(data: dict[str, Any]) -> tuple[dict[str, Any], bool]:
         if not isinstance(item, dict):
             changed = True
             continue
-        n = normalize_account(item)
+        n = normalize_account(item, fallback_base_url=top_level_base_url)
         if item != n:
             changed = True
         new_accounts.append(n)
+
+    if normalized.get("base_url") != top_level_base_url:
+        changed = True
+    normalized["base_url"] = top_level_base_url
 
     if normalized.get("accounts") != new_accounts:
         changed = True
@@ -441,11 +495,17 @@ def delete_runtime_entry(path: pathlib.Path, account_name: str) -> None:
         atomic_save_json(path, store)
 
 
-def build_headers(new_api_user: str, referer: str | None = None, extra_headers: dict[str, str] | None = None) -> dict[str, str]:
+def build_headers(
+    new_api_user: str,
+    referer: str | None = None,
+    extra_headers: dict[str, str] | None = None,
+    base_url: str | None = None,
+) -> dict[str, str]:
+    base_url = normalize_base_url(base_url or get_base_url())
     headers = dict(DEFAULT_HEADERS)
     headers["new-api-user"] = str(new_api_user)
-    if referer:
-        headers["referer"] = referer
+    headers["origin"] = base_url
+    headers["referer"] = referer or f"{base_url}/console/personal"
     if extra_headers:
         headers.update(extra_headers)
     return headers
@@ -467,9 +527,12 @@ def mask_api_key(key: str) -> str:
     return f"{key[:4]}...{key[-4:]}"
 
 
-def fetch_public_status() -> dict[str, Any]:
-    url = BASE_URL.rstrip("/") + "/" + STATUS_PATH.lstrip("/")
+def fetch_public_status(base_url: str | None = None) -> dict[str, Any]:
+    base_url = normalize_base_url(base_url or get_base_url())
+    url = base_url.rstrip("/") + "/" + STATUS_PATH.lstrip("/")
     headers = dict(DEFAULT_HEADERS)
+    headers["origin"] = base_url
+    headers["referer"] = f"{base_url}/console/personal"
     try:
         resp = requests.get(url, headers=headers, timeout=TIMEOUT_SECONDS)
     except requests.RequestException as exc:
@@ -479,6 +542,15 @@ def fetch_public_status() -> dict[str, Any]:
         payload = resp.json()
     except ValueError:
         payload = {"raw": resp.text[:500]}
+
+    if isinstance(payload, dict):
+        raw = str(payload.get("raw") or "").lstrip().lower()
+        if raw.startswith("<!doctype html") or raw.startswith("<html"):
+            return {
+                "ok": False,
+                "api_error": f"status endpoint returned HTML; check base_url ({base_url})",
+                "payload": payload,
+            }
 
     if not isinstance(payload, dict) or payload.get("success") is not True:
         message = payload.get("message", "") if isinstance(payload, dict) else ""
@@ -507,17 +579,19 @@ def fetch_public_status() -> dict[str, Any]:
     }
 
 
-def request_self_with_retry(session_value: str, user_id: str) -> tuple[requests.Response | None, dict[str, Any], str | None]:
-    url = BASE_URL.rstrip("/") + "/" + SELF_PATH.lstrip("/")
+def request_self_with_retry(session_value: str, user_id: str, base_url: str) -> tuple[requests.Response | None, dict[str, Any], str | None]:
+    base_url = normalize_base_url(base_url)
+    url = base_url.rstrip("/") + "/" + SELF_PATH.lstrip("/")
     cookies = {"session": session_value}
     headers = build_headers(
         user_id,
-        referer="https://www.new-api.com/console",
+        referer=f"{base_url}/console",
         extra_headers={
             "dnt": "1",
             "pragma": "no-cache",
             "connection": "close",
         },
+        base_url=base_url,
     )
 
     attempts = 3
@@ -651,6 +725,7 @@ def classify_checkin(account: dict[str, Any]) -> dict[str, Any]:
     name = account.get("name") or "unknown"
     session_value = (account.get("session") or "").strip()
     user_id = (account.get("new_api_user") or "").strip()
+    base_url = normalize_base_url(str(account.get("base_url") or get_base_url()))
 
     if not session_value:
         return {
@@ -667,9 +742,9 @@ def classify_checkin(account: dict[str, Any]) -> dict[str, Any]:
             "timestamp": now_ts(),
         }
 
-    url = BASE_URL.rstrip("/") + "/" + CHECKIN_PATH.lstrip("/")
+    url = base_url.rstrip("/") + "/" + CHECKIN_PATH.lstrip("/")
     cookies = {"session": session_value}
-    headers = build_headers(user_id)
+    headers = build_headers(user_id, base_url=base_url)
 
     try:
         resp = requests.post(url, cookies=cookies, headers=headers, timeout=TIMEOUT_SECONDS)
@@ -720,6 +795,7 @@ def check_status(account: dict[str, Any], system_status: dict[str, Any] | None =
     name = account.get("name") or "unknown"
     session_value = (account.get("session") or "").strip()
     user_id = (account.get("new_api_user") or "").strip()
+    base_url = normalize_base_url(str(account.get("base_url") or get_base_url()))
 
     if not session_value:
         return {
@@ -741,7 +817,7 @@ def check_status(account: dict[str, Any], system_status: dict[str, Any] | None =
             "system_status": system_status,
             "timestamp": now_ts(),
         }
-    resp, payload, network_error = request_self_with_retry(session_value, user_id)
+    resp, payload, network_error = request_self_with_retry(session_value, user_id, base_url=base_url)
     if network_error:
         return {
             "account": name,
@@ -775,6 +851,19 @@ def check_status(account: dict[str, Any], system_status: dict[str, Any] | None =
             "session_valid": False,
             "needs_verification": False,
             "api_error": f"http {resp.status_code}",
+            "system_status": system_status,
+            "payload": payload,
+            "timestamp": now_ts(),
+        }
+
+    raw = str(payload.get("raw") or "").lstrip().lower() if isinstance(payload, dict) else ""
+    if raw.startswith("<!doctype html") or raw.startswith("<html"):
+        return {
+            "account": name,
+            "status_state": "API_ERROR",
+            "session_valid": False,
+            "needs_verification": False,
+            "api_error": f"self endpoint returned HTML; check base_url ({base_url})",
             "system_status": system_status,
             "payload": payload,
             "timestamp": now_ts(),
@@ -901,6 +990,7 @@ def to_public_account(account: dict[str, Any], signin_status: str = "未签到",
     return {
         "name": account.get("name", ""),
         "enabled": bool(account.get("enabled", True)),
+        "base_url": normalize_base_url(str(account.get("base_url") or get_base_url())),
         "new_api_user": str(account.get("new_api_user", "")),
         "session": str(account.get("session", "")),
         "api_keys": api_keys,
@@ -912,6 +1002,8 @@ def to_public_account(account: dict[str, Any], signin_status: str = "未签到",
 
 def parse_account_payload(data: dict[str, Any], require_name: bool = True) -> dict[str, Any]:
     name = str(data.get("name") or "").strip()
+    raw_base_url = str(data.get("base_url") or "").strip()
+    base_url = normalize_base_url(raw_base_url)
     new_api_user = str(data.get("new_api_user") or "").strip()
     session_value = str(data.get("session") or "").strip()
     enabled = bool(data.get("enabled", True))
@@ -919,6 +1011,7 @@ def parse_account_payload(data: dict[str, Any], require_name: bool = True) -> di
 
     validate_account_fields(
         name=name,
+        base_url=raw_base_url,
         new_api_user=new_api_user,
         session_value=session_value,
         api_keys=api_keys,
@@ -928,6 +1021,7 @@ def parse_account_payload(data: dict[str, Any], require_name: bool = True) -> di
     return {
         "name": name,
         "enabled": enabled,
+        "base_url": base_url,
         "new_api_user": new_api_user,
         "session": session_value,
         "api_keys": api_keys,
@@ -958,7 +1052,7 @@ def index() -> str:
 def list_accounts():
     cfg = load_config()
     accounts = build_public_accounts(cfg.get("accounts", []))
-    return jsonify({"ok": True, "accounts": accounts})
+    return jsonify({"ok": True, "accounts": accounts, "default_base_url": normalize_base_url(str(cfg.get("base_url") or get_base_url()))})
 
 
 @app.route("/api/accounts", methods=["POST"])
@@ -1077,7 +1171,8 @@ def status_one(name: str):
     idx = get_account_index(accounts, name)
     if idx < 0:
         return jsonify({"ok": False, "error": "account not found"}), 404
-    system_status = fetch_public_status()
+    account_base_url = normalize_base_url(str(accounts[idx].get("base_url") or get_base_url()))
+    system_status = fetch_public_status(base_url=account_base_url)
     result = check_status(accounts[idx], system_status=system_status)
     set_status_cache(name, result)
     return jsonify({"ok": True, "result": result, "system_status": system_status})
@@ -1087,13 +1182,18 @@ def status_one(name: str):
 def status_all():
     cfg = load_config()
     accounts = [a for a in cfg.get("accounts", []) if a.get("enabled", True)]
-    system_status = fetch_public_status()
+    system_status_cache: dict[str, dict[str, Any]] = {}
     results = []
     for acc in accounts:
+        account_base_url = normalize_base_url(str(acc.get("base_url") or get_base_url()))
+        if account_base_url not in system_status_cache:
+            system_status_cache[account_base_url] = fetch_public_status(base_url=account_base_url)
+        system_status = system_status_cache[account_base_url]
         result = check_status(acc, system_status=system_status)
         results.append(result)
         set_status_cache(str(acc.get("name") or ""), result)
-    return jsonify({"ok": True, "results": results, "system_status": system_status})
+    default_base_url = normalize_base_url(str(get_base_url()))
+    return jsonify({"ok": True, "results": results, "system_status": system_status_cache.get(default_base_url) or fetch_public_status(base_url=default_base_url)})
 
 
 @app.route("/api/system/status", methods=["GET"])
@@ -1113,4 +1213,3 @@ if __name__ == "__main__":
     ensure_config_normalized()
     app.jinja_env.auto_reload = True
     app.run(host="127.0.0.1", port=5050, debug=False)
-

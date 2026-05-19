@@ -5,6 +5,7 @@ A local Flask web console for multi-account new-api management.
 ## Features
 
 - Multi-account management (add, edit, enable/disable, delete)
+- Per-account domain (`base_url`) configuration (required when adding/editing)
 - One-click sign-in for one account or all enabled accounts
 - Persisted **today sign-in status** (`已签到 / 失败 / 未知`)
 - Account check with:
@@ -49,10 +50,12 @@ pip install flask requests
 
 ```json
 {
+  "base_url": "https://your-service-domain.com",
   "accounts": [
     {
       "name": "account_1",
       "enabled": true,
+      "base_url": "https://your-service-domain.com",
       "new_api_user": "1571",
       "session": "YOUR_SESSION",
       "api_keys": [
@@ -63,6 +66,10 @@ pip install flask requests
   ]
 }
 ```
+
+- `base_url` is optional. If omitted, app uses `https://www.new-api.com`.
+- You can override at runtime with env var `NEW_API_BASE_URL`.
+- `accounts[].base_url` is required for each account; if missing, legacy data is auto-filled from top-level `base_url` during startup.
 
 3. Start the web app:
 
@@ -90,6 +97,7 @@ run_web.bat
 ### 3) Balance check
 
 - Current balance comes from `/api/user/self`.
+- Status and sign-in requests are sent to each account's own `base_url`.
 - Delta is computed against the **previous stored snapshot**.
 - Latest detection result is also cached locally in `data/status_cache.json`.
 - If current response has no quota, app falls back to last snapshot and marks it as cached source in UI.
