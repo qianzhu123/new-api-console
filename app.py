@@ -209,12 +209,37 @@ def normalize_config(data: dict[str, Any]) -> tuple[dict[str, Any], bool]:
         raw_accounts = []
         changed = True
 
+    existing_ids: list[int] = []
+    for item in raw_accounts:
+        if not isinstance(item, dict):
+            continue
+        try:
+            account_id = int(item.get("account_index", 0))
+        except (TypeError, ValueError):
+            account_id = 0
+        if account_id > 0:
+            existing_ids.append(account_id)
+    next_account_id = (max(existing_ids) + 1) if existing_ids else 1
+    used_account_ids: set[int] = set()
+
     new_accounts: list[dict[str, Any]] = []
     for item in raw_accounts:
         if not isinstance(item, dict):
             changed = True
             continue
         n = normalize_account(item, fallback_base_url=top_level_base_url)
+        try:
+            account_id = int(n.get("account_index", 0))
+        except (TypeError, ValueError):
+            account_id = 0
+        if account_id <= 0 or account_id in used_account_ids:
+            while next_account_id in used_account_ids:
+                next_account_id += 1
+            account_id = next_account_id
+            next_account_id += 1
+            changed = True
+        n["account_index"] = account_id
+        used_account_ids.add(account_id)
         if item != n:
             changed = True
         new_accounts.append(n)
@@ -723,6 +748,7 @@ def build_yesterday_delta(account_name: str, current_quota: int | float | None) 
 
 def classify_checkin(account: dict[str, Any]) -> dict[str, Any]:
     name = account.get("name") or "unknown"
+    account_index = int(account.get("account_index", 0) or 0)
     session_value = (account.get("session") or "").strip()
     user_id = (account.get("new_api_user") or "").strip()
     base_url = normalize_base_url(str(account.get("base_url") or get_base_url()))
@@ -730,6 +756,7 @@ def classify_checkin(account: dict[str, Any]) -> dict[str, Any]:
     if not session_value:
         return {
             "account": name,
+            "account_index": account_index,
             "state": "FAILED",
             "message": "missing session",
             "timestamp": now_ts(),
@@ -783,6 +810,7 @@ def classify_checkin(account: dict[str, Any]) -> dict[str, Any]:
 
     return {
         "account": name,
+        "account_index": account_index,
         "state": state,
         "message": message,
         "http_status": resp.status_code,
@@ -793,6 +821,8 @@ def classify_checkin(account: dict[str, Any]) -> dict[str, Any]:
 
 def check_status(account: dict[str, Any], system_status: dict[str, Any] | None = None) -> dict[str, Any]:
     name = account.get("name") or "unknown"
+    account_index = int(account.get("account_index", 0) or 0)
+    runtime_key = str(account_index) if account_index > 0 else str(name)
     session_value = (account.get("session") or "").strip()
     user_id = (account.get("new_api_user") or "").strip()
     base_url = normalize_base_url(str(account.get("base_url") or get_base_url()))
@@ -800,6 +830,7 @@ def check_status(account: dict[str, Any], system_status: dict[str, Any] | None =
     if not session_value:
         return {
             "account": name,
+            "account_index": account_index,
             "status_state": "INVALID_SESSION",
             "session_valid": False,
             "needs_verification": False,
@@ -821,6 +852,7 @@ def check_status(account: dict[str, Any], system_status: dict[str, Any] | None =
     if network_error:
         return {
             "account": name,
+            "account_index": account_index,
             "status_state": "NETWORK_ERROR",
             "session_valid": False,
             "needs_verification": False,
@@ -875,10 +907,10 @@ def check_status(account: dict[str, Any], system_status: dict[str, Any] | None =
         quota_delta = None
         quota_source = "live"
         if isinstance(quota, (int, float)):
-            quota_delta = record_quota_snapshot_and_get_previous_change(name, quota)
-            yesterday_delta = build_yesterday_delta(name, quota)
+            quota_delta = record_quota_snapshot_and_get_previous_change(runtime_key, quota)
+            yesterday_delta = build_yesterday_delta(runtime_key, quota)
         else:
-            last = get_last_quota_snapshot(name)
+            last = get_last_quota_snapshot(runtime_key)
             if isinstance(last, dict):
                 quota = last.get("quota")
                 quota_source = "cache"
@@ -889,7 +921,7 @@ def check_status(account: dict[str, Any], system_status: dict[str, Any] | None =
                     "change_from_previous": 0,
                     "timestamp": now_ts(),
                 }
-                yesterday_delta = build_yesterday_delta(name, quota if isinstance(quota, (int, float)) else None)
+                yesterday_delta = build_yesterday_delta(runtime_key, quota if isinstance(quota, (int, float)) else None)
             else:
                 quota_source = "missing"
                 quota_delta = {
@@ -908,6 +940,7 @@ def check_status(account: dict[str, Any], system_status: dict[str, Any] | None =
 
         return {
             "account": name,
+            "account_index": account_index,
             "status_state": "VALID",
             "session_valid": True,
             "needs_verification": False,
@@ -978,16 +1011,35 @@ def check_status(account: dict[str, Any], system_status: dict[str, Any] | None =
     }
 
 
-def get_account_index(accounts: list[dict[str, Any]], name: str) -> int:
+def get_account_index(accounts: list[dict[str, Any]], account_index: int | str) -> int:
+    try:
+        wanted = int(account_index)
+    except (TypeError, ValueError):
+        return -1
     for idx, acc in enumerate(accounts):
-        if (acc.get("name") or "") == name:
+        try:
+            current = int(acc.get("account_index", 0))
+        except (TypeError, ValueError):
+            current = 0
+        if current == wanted:
             return idx
     return -1
+
+
+def get_next_account_index(accounts: list[dict[str, Any]]) -> int:
+    max_id = 0
+    for acc in accounts:
+        try:
+            max_id = max(max_id, int(acc.get("account_index", 0)))
+        except (TypeError, ValueError):
+            continue
+    return max_id + 1
 
 
 def to_public_account(account: dict[str, Any], signin_status: str = "未签到", last_status: dict[str, Any] | None = None) -> dict[str, Any]:
     api_keys = parse_api_keys(account.get("api_keys"))
     return {
+        "account_index": int(account.get("account_index", 0) or 0),
         "name": account.get("name", ""),
         "enabled": bool(account.get("enabled", True)),
         "base_url": normalize_base_url(str(account.get("base_url") or get_base_url())),
@@ -1019,6 +1071,7 @@ def parse_account_payload(data: dict[str, Any], require_name: bool = True) -> di
     )
 
     return {
+        "account_index": int(data.get("account_index", 0) or 0),
         "name": name,
         "enabled": enabled,
         "base_url": base_url,
@@ -1035,10 +1088,14 @@ def build_public_accounts(accounts: list[dict[str, Any]]) -> list[dict[str, Any]
     status_map = status_store.get("accounts", {}) if isinstance(status_store.get("accounts"), dict) else {}
     out: list[dict[str, Any]] = []
     for acc in accounts:
+        account_index = int(acc.get("account_index", 0) or 0)
         name = str(acc.get("name") or "")
-        item = signin_map.get(name)
+        runtime_key = str(account_index) if account_index > 0 else name
+        item = signin_map.get(runtime_key) or signin_map.get(name)
         status = item.get("status") if isinstance(item, dict) else "未签到"
-        last_status = status_map.get(name) if isinstance(status_map.get(name), dict) else None
+        last_status = status_map.get(runtime_key) if isinstance(status_map.get(runtime_key), dict) else None
+        if last_status is None:
+            last_status = status_map.get(name) if isinstance(status_map.get(name), dict) else None
         out.append(to_public_account(acc, signin_status=status or "未签到", last_status=last_status))
     return out
 
@@ -1066,83 +1123,88 @@ def add_account():
     cfg = load_config(normalize_and_persist=False)
     accounts = cfg.get("accounts", [])
 
-    if get_account_index(accounts, new_account["name"]) >= 0:
-        return jsonify({"ok": False, "error": "account name already exists"}), 409
-
+    new_account["account_index"] = get_next_account_index(accounts)
     accounts.append(new_account)
     cfg["accounts"] = accounts
     cfg = save_config(cfg)
     return jsonify({"ok": True, "account": to_public_account(new_account, signin_status="未签到", last_status=None), "accounts": build_public_accounts(cfg["accounts"])})
 
 
-@app.route("/api/accounts/<path:name>", methods=["PUT"])
-def update_account(name: str):
-    old_name = name
+@app.route("/api/accounts/<int:account_index>", methods=["PUT"])
+def update_account(account_index: int):
+    old_key = str(account_index)
     cfg = load_config(normalize_and_persist=False)
     accounts = cfg.get("accounts", [])
-    idx = get_account_index(accounts, old_name)
+    idx = get_account_index(accounts, account_index)
     if idx < 0:
         return jsonify({"ok": False, "error": "account not found"}), 404
 
+    old_account = accounts[idx]
+    old_name = str(old_account.get("name") or "")
     try:
         payload = request.get_json(force=True)
         updated = parse_account_payload(payload, require_name=True)
     except Exception as exc:
         return jsonify({"ok": False, "error": str(exc)}), 400
 
-    new_name = updated["name"]
-    if new_name != old_name and get_account_index(accounts, new_name) >= 0:
-        return jsonify({"ok": False, "error": "target name already exists"}), 409
-
+    updated["account_index"] = account_index
     accounts[idx] = updated
     cfg["accounts"] = accounts
     cfg = save_config(cfg)
-    if new_name != old_name:
-        move_runtime_entry(SIGNIN_PATH, old_name, new_name)
-        move_runtime_entry(HISTORY_PATH, old_name, new_name)
-        move_runtime_entry(STATUS_CACHE_PATH, old_name, new_name)
+    if old_key != old_name:
+        move_runtime_entry(SIGNIN_PATH, old_name, old_key)
+        move_runtime_entry(HISTORY_PATH, old_name, old_key)
+        move_runtime_entry(STATUS_CACHE_PATH, old_name, old_key)
     return jsonify({
         "ok": True,
         "account": to_public_account(
             updated,
-            signin_status=get_signin_status_today(updated.get("name", "")),
-            last_status=get_status_cache(updated.get("name", "")),
+            signin_status=get_signin_status_today(old_key),
+            last_status=get_status_cache(old_key),
         ),
         "accounts": build_public_accounts(cfg["accounts"]),
     })
 
 
-@app.route("/api/accounts/<path:name>", methods=["DELETE"])
-def delete_account(name: str):
+@app.route("/api/accounts/<int:account_index>", methods=["DELETE"])
+def delete_account(account_index: int):
     cfg = load_config(normalize_and_persist=False)
     accounts = cfg.get("accounts", [])
-    idx = get_account_index(accounts, name)
+    idx = get_account_index(accounts, account_index)
     if idx < 0:
         return jsonify({"ok": False, "error": "account not found"}), 404
 
     removed = accounts.pop(idx)
-    delete_runtime_entry(SIGNIN_PATH, name)
-    delete_runtime_entry(HISTORY_PATH, name)
-    delete_runtime_entry(STATUS_CACHE_PATH, name)
+    runtime_key = str(account_index)
+    old_name = str(removed.get("name") or "")
+    delete_runtime_entry(SIGNIN_PATH, runtime_key)
+    delete_runtime_entry(HISTORY_PATH, runtime_key)
+    delete_runtime_entry(STATUS_CACHE_PATH, runtime_key)
+    if old_name != runtime_key:
+        delete_runtime_entry(SIGNIN_PATH, old_name)
+        delete_runtime_entry(HISTORY_PATH, old_name)
+        delete_runtime_entry(STATUS_CACHE_PATH, old_name)
     cfg["accounts"] = accounts
     cfg = save_config(cfg)
     return jsonify({"ok": True, "deleted": removed.get("name"), "accounts": build_public_accounts(cfg["accounts"])})
 
 
-@app.route("/api/accounts/<path:name>/checkin", methods=["POST"])
-def checkin_one(name: str):
+@app.route("/api/accounts/<int:account_index>/checkin", methods=["POST"])
+def checkin_one(account_index: int):
     # Daily cleanup: keep only today's sign-in records.
     load_signin_store(normalize_and_persist=True)
     cfg = load_config()
     accounts = cfg.get("accounts", [])
-    idx = get_account_index(accounts, name)
+    idx = get_account_index(accounts, account_index)
     if idx < 0:
         return jsonify({"ok": False, "error": "account not found"}), 404
     result = classify_checkin(accounts[idx])
+    result["account_index"] = account_index
+    runtime_key = str(account_index)
     if result.get("state") in ("SIGNED_NOW", "ALREADY_SIGNED"):
-        set_signin_status_today(name, "已签到")
+        set_signin_status_today(runtime_key, "已签到")
     elif result.get("state") == "FAILED":
-        set_signin_status_today(name, "未签到")
+        set_signin_status_today(runtime_key, "未签到")
     return jsonify({"ok": True, "result": result})
 
 
@@ -1156,25 +1218,29 @@ def checkin_all():
     for acc in accounts:
         result = classify_checkin(acc)
         account_name = str(acc.get("name") or "")
+        account_index = int(acc.get("account_index", 0) or 0)
+        runtime_key = str(account_index) if account_index > 0 else account_name
+        result["account_index"] = account_index
         if result.get("state") in ("SIGNED_NOW", "ALREADY_SIGNED"):
-            set_signin_status_today(account_name, "已签到")
+            set_signin_status_today(runtime_key, "已签到")
         elif result.get("state") == "FAILED":
-            set_signin_status_today(account_name, "未签到")
+            set_signin_status_today(runtime_key, "未签到")
         results.append(result)
     return jsonify({"ok": True, "results": results})
 
 
-@app.route("/api/accounts/<path:name>/status", methods=["POST"])
-def status_one(name: str):
+@app.route("/api/accounts/<int:account_index>/status", methods=["POST"])
+def status_one(account_index: int):
     cfg = load_config()
     accounts = cfg.get("accounts", [])
-    idx = get_account_index(accounts, name)
+    idx = get_account_index(accounts, account_index)
     if idx < 0:
         return jsonify({"ok": False, "error": "account not found"}), 404
     account_base_url = normalize_base_url(str(accounts[idx].get("base_url") or get_base_url()))
     system_status = fetch_public_status(base_url=account_base_url)
     result = check_status(accounts[idx], system_status=system_status)
-    set_status_cache(name, result)
+    result["account_index"] = account_index
+    set_status_cache(str(account_index), result)
     return jsonify({"ok": True, "result": result, "system_status": system_status})
 
 
@@ -1190,8 +1256,10 @@ def status_all():
             system_status_cache[account_base_url] = fetch_public_status(base_url=account_base_url)
         system_status = system_status_cache[account_base_url]
         result = check_status(acc, system_status=system_status)
+        account_index = int(acc.get("account_index", 0) or 0)
+        result["account_index"] = account_index
         results.append(result)
-        set_status_cache(str(acc.get("name") or ""), result)
+        set_status_cache(str(account_index) if account_index > 0 else str(acc.get("name") or ""), result)
     default_base_url = normalize_base_url(str(get_base_url()))
     return jsonify({"ok": True, "results": results, "system_status": system_status_cache.get(default_base_url) or fetch_public_status(base_url=default_base_url)})
 

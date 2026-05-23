@@ -389,6 +389,7 @@
         <table>
           <thead>
             <tr>
+              <th>序号</th>
               <th>账号名</th>
               <th>启用</th>
               <th>new_api_user</th>
@@ -411,6 +412,8 @@
 
         <hr style="border-color:var(--line); margin:12px 0;">
         <h3 style="margin-top:0;">账号编辑</h3>
+        <div class="small" style="margin-bottom:10px;">点击左侧账号行即可编辑；列表内不再单独显示编辑/停用按钮。</div>
+        <div id="edit-panel">
 
         <div class="form-group">
           <label for="f-name">账号名</label>
@@ -442,7 +445,7 @@
           <button id="btn-cancel" class="secondary">取消</button>
           <button id="btn-delete" class="bad">删除</button>
         </div>
-
+        </div>
         <div class="status-line" id="busy-line"></div>
         <div class="log" id="log"></div>
       </div>
@@ -499,7 +502,7 @@
 const state = {
   accounts: [],
   selected: null,
-  editingOriginalName: null,
+  editingAccountKey: null,
   defaultBaseUrl: 'https://www.new-api.com',
   checkinResults: {},
   signinStatus: {},
@@ -613,28 +616,43 @@ function formatShortTs(ts) {
   return `${m[2]}-${m[3]} ${m[4]}`;
 }
 
-async function copyApiKeys(name) {
-  const acc = state.accounts.find((a) => a.name === name);
+async function copyApiKeys(key) {
+  const acc = findAccountByKey(key);
+  const label = accountLabel(acc || key);
   if (!acc) {
-    log(`未找到账号：${name}`, 'bad2');
-    notify('bad2', '未找到账号', `${name} 不存在于当前列表中。`);
+    log(`未找到账号：${label}`, 'bad2');
+    notify('bad2', '未找到账号', `${label} 不存在于当前列表中。`);
     return;
   }
   const keys = Array.isArray(acc.api_keys) ? acc.api_keys.filter(Boolean) : [];
   if (!keys.length) {
-    log(`${name} 没有可复制的 API Key`, 'warn2');
-    notify('warn2', '没有可复制的 API Key', `${name} 当前没有保存可复制的 Key。`);
+    log(`${label} 没有可复制的 API Key`, 'warn2');
+    notify('warn2', '没有可复制的 API Key', `${label} 当前没有保存可复制的 Key。`);
     return;
   }
-  const text = keys.join('\\n');
+  const text = keys.join('\n');
   try {
     await navigator.clipboard.writeText(text);
-    log(`${name} API Key 已复制（${keys.length} 条）`, 'ok');
-    notify('ok', '复制成功', `${name} 的 API Key 已复制到剪贴板，共 ${keys.length} 条。`);
+    log(`${label} API Key 已复制（${keys.length} 条）`, 'ok');
+    notify('ok', '复制成功', `${label} 的 API Key 已复制到剪贴板，共 ${keys.length} 条。`);
   } catch (e) {
-    log(`${name} 复制失败：${e.message || e}`, 'bad2');
-    notify('bad2', '复制失败', `${name} 的 API Key 复制失败：${e.message || e}`);
+    log(`${label} 复制失败：${e.message || e}`, 'bad2');
+    notify('bad2', '复制失败', `${label} 的 API Key 复制失败：${e.message || e}`);
   }
+}
+
+function accountKey(acc) {
+  return String(acc?.account_index || '');
+}
+
+function findAccountByKey(key) {
+  return state.accounts.find((a) => accountKey(a) === String(key)) || null;
+}
+
+function accountLabel(accOrKey) {
+  const acc = typeof accOrKey === 'object' ? accOrKey : findAccountByKey(accOrKey);
+  if (!acc) return `#${accOrKey}`;
+  return `#${accountKey(acc)} ${acc.name || ''}`.trim();
 }
 
 function maskTag(enabled) {
@@ -654,9 +672,12 @@ function setEditFormDisabled(disabled) {
   for (const node of [el.fName, el.fBaseUrl, el.fUser, el.fSession, el.fKeys, el.fEnabled]) {
     node.disabled = disabled;
   }
-  document.getElementById('btn-save').disabled = disabled;
-  document.getElementById('btn-cancel').disabled = disabled;
-  document.getElementById('btn-delete').disabled = disabled;
+  const saveBtn = document.getElementById('btn-save');
+  const cancelBtn = document.getElementById('btn-cancel');
+  const deleteBtn = document.getElementById('btn-delete');
+  if (saveBtn) saveBtn.disabled = disabled;
+  if (cancelBtn) cancelBtn.disabled = disabled;
+  if (deleteBtn) deleteBtn.disabled = disabled;
 }
 
 function resetModalForm() {
@@ -752,7 +773,7 @@ function validatePayload(payload, fields) {
 
 function fillForm(acc = null) {
   if (!acc) {
-    state.editingOriginalName = null;
+    state.editingAccountKey = null;
     el.fName.value = '';
     el.fBaseUrl.value = '';
     el.fUser.value = '';
@@ -764,7 +785,7 @@ function fillForm(acc = null) {
     el.panelTitle.textContent = '账号编辑';
     return;
   }
-  state.editingOriginalName = acc.name;
+  state.editingAccountKey = accountKey(acc);
   el.fName.value = acc.name || '';
   el.fBaseUrl.value = acc.base_url || state.defaultBaseUrl || '';
   el.fUser.value = acc.new_api_user || '';
@@ -776,16 +797,16 @@ function fillForm(acc = null) {
   el.panelTitle.textContent = `编辑账号：${acc.name}`;
 }
 
-function renderRowSummary(name) {
-  if (state.pendingAccounts[name]) {
+function renderRowSummary(key) {
+  if (state.pendingAccounts[key]) {
     return {
-      checkinText: state.pendingAccounts[name] === 'checkin' ? '处理中...' : (state.signinStatus[name] || '未签到'),
-      statusText: state.pendingAccounts[name] === 'status' ? '处理中...' : '-',
+      checkinText: state.pendingAccounts[key] === 'checkin' ? '处理中...' : (state.signinStatus[key] || '未签到'),
+      statusText: state.pendingAccounts[key] === 'status' ? '处理中...' : '-',
     };
   }
 
-  const s = state.statusResults[name];
-  const checkinText = state.signinStatus[name] || '未签到';
+  const s = state.statusResults[key];
+  const checkinText = state.signinStatus[key] || '未签到';
   let statusText = '-';
   if (s) {
     if (s.status_state === 'VALID') statusText = '有效';
@@ -801,19 +822,20 @@ function renderTable() {
   el.body.innerHTML = '';
 
   for (const acc of state.accounts) {
+    const key = accountKey(acc);
     const tr = document.createElement('tr');
-    if (state.selected && state.selected.name === acc.name) tr.classList.add('selected');
-    tr.addEventListener('click', () => selectAccount(acc.name));
+    if (state.selected && accountKey(state.selected) === key) tr.classList.add('selected');
+    tr.addEventListener('click', () => selectAccount(key));
 
-    const running = !!state.pendingAccounts[acc.name];
-    const rowSum = renderRowSummary(acc.name);
-    const activeAction = state.pendingAccounts[acc.name];
+    const running = !!state.pendingAccounts[key];
+    const rowSum = renderRowSummary(key);
+    const activeAction = state.pendingAccounts[key];
     const checkinLabel = activeAction === 'checkin' ? '签到中' : '签到';
     const statusLabel = activeAction === 'status' ? '检测中' : '检测';
-    const toggleLabel = activeAction === 'toggle' ? '处理中' : (acc.enabled ? '停用' : '启用');
     const deleteLabel = activeAction === 'delete' ? '处理中' : '删除';
 
     tr.innerHTML = `
+      <td class="mono">${key}</td>
       <td>${acc.name || ''}</td>
       <td>${running ? '<span class="tag run">处理中</span>' : maskTag(acc.enabled)}</td>
       <td class="mono">${acc.new_api_user || ''}</td>
@@ -821,12 +843,10 @@ function renderTable() {
       <td class="small">${rowSum.statusText}</td>
       <td>
         <div class="row-actions">
-          <button data-action="copy" data-name="${acc.name}" class="secondary" ${running ? 'disabled' : ''}>复制APIKey</button>
-          <button data-action="checkin" data-name="${acc.name}" class="${activeAction === 'checkin' ? 'busy-button' : ''}" ${running ? 'disabled' : ''}>${checkinLabel}</button>
-          <button data-action="status" data-name="${acc.name}" class="secondary ${activeAction === 'status' ? 'busy-button' : ''}" ${running ? 'disabled' : ''}>${statusLabel}</button>
-          <button data-action="edit" data-name="${acc.name}" class="warn" ${running ? 'disabled' : ''}>编辑</button>
-          <button data-action="toggle" data-name="${acc.name}" class="secondary ${activeAction === 'toggle' ? 'busy-button' : ''}" ${running ? 'disabled' : ''}>${toggleLabel}</button>
-          <button data-action="delete" data-name="${acc.name}" class="bad ${activeAction === 'delete' ? 'busy-button' : ''}" ${running ? 'disabled' : ''}>${deleteLabel}</button>
+          <button data-action="copy" data-key="${key}" class="secondary" ${running ? 'disabled' : ''}>复制APIKey</button>
+          <button data-action="checkin" data-key="${key}" class="${activeAction === 'checkin' ? 'busy-button' : ''}" ${running ? 'disabled' : ''}>${checkinLabel}</button>
+          <button data-action="status" data-key="${key}" class="secondary ${activeAction === 'status' ? 'busy-button' : ''}" ${running ? 'disabled' : ''}>${statusLabel}</button>
+          <button data-action="delete" data-key="${key}" class="bad ${activeAction === 'delete' ? 'busy-button' : ''}" ${running ? 'disabled' : ''}>${deleteLabel}</button>
         </div>
       </td>
     `;
@@ -838,18 +858,14 @@ function renderTable() {
     btn.addEventListener('click', async (e) => {
       e.stopPropagation();
       const action = btn.dataset.action;
-      const name = btn.dataset.name;
+      const key = btn.dataset.key;
       if (action === 'copy') {
-        await copyApiKeys(name);
+        await copyApiKeys(key);
         return;
       }
-      if (action === 'checkin') await withAccountBusy(name, 'checkin', () => checkinOne(name));
-      if (action === 'status') await withAccountBusy(name, 'status', () => statusOne(name));
-      if (action === 'edit') {
-        selectAccount(name);
-      }
-      if (action === 'toggle') await withAccountBusy(name, 'toggle', () => toggleOne(name));
-      if (action === 'delete') await withAccountBusy(name, 'delete', () => deleteOne(name));
+      if (action === 'checkin') await withAccountBusy(key, 'checkin', () => checkinOne(key));
+      if (action === 'status') await withAccountBusy(key, 'status', () => statusOne(key));
+      if (action === 'delete') await withAccountBusy(key, 'delete', () => deleteOne(key));
     });
   }
 }
@@ -879,8 +895,9 @@ function renderDetail() {
   el.detailContent.style.display = 'block';
 
   const acc = state.selected;
-  const sr = state.statusResults[acc.name];
-  const signState = state.signinStatus[acc.name] || '未签到';
+  const key = accountKey(acc);
+  const sr = state.statusResults[key];
+  const signState = state.signinStatus[key] || '未签到';
   const identity = sr?.identity || {};
   const sys = sr?.system_status || state.systemStatus;
   const q = sr?.quota || {};
@@ -900,6 +917,7 @@ function renderDetail() {
       </div>
     </div>
     <div class="hero-badges">
+      <span class="hero-badge mono">序号：${key}</span>
       <span class="hero-badge">启用：${acc.enabled ? '是' : '否'}</span>
       <span class="hero-badge">今日签到：${signState}</span>
       <span class="hero-badge mono">地址：${acc.base_url || '-'}</span>
@@ -926,8 +944,8 @@ function renderDetail() {
   fillForm(acc);
 }
 
-function selectAccount(name) {
-  state.selected = state.accounts.find((a) => a.name === name) || null;
+function selectAccount(key) {
+  state.selected = findAccountByKey(key);
   if (state.selected) {
     fillForm(state.selected);
   }
@@ -942,12 +960,13 @@ async function refreshAccounts() {
   state.signinStatus = {};
   state.statusResults = {};
   for (const acc of state.accounts) {
-    state.signinStatus[acc.name] = acc.signin_status || '未签到';
+    const key = accountKey(acc);
+    state.signinStatus[key] = acc.signin_status || '未签到';
     if (acc.last_status && typeof acc.last_status === 'object') {
-      state.statusResults[acc.name] = acc.last_status;
+      state.statusResults[key] = acc.last_status;
     }
   }
-  if (state.selected) state.selected = state.accounts.find((a) => a.name === state.selected.name) || null;
+  if (state.selected) state.selected = findAccountByKey(accountKey(state.selected));
   renderTable();
   renderDetail();
 }
@@ -986,91 +1005,51 @@ async function withGlobalBusy(text, button, busyText, fn) {
   }
 }
 
-async function withAccountBusy(name, action, fn) {
-  if (state.pendingAccounts[name]) return;
-  state.pendingAccounts[name] = action;
-  setBusyText(`账号 ${name} 正在执行：${action}`);
+async function withAccountBusy(key, action, fn) {
+  if (state.pendingAccounts[key]) return;
+  state.pendingAccounts[key] = action;
+  setBusyText(`${accountLabel(key)} 正在执行：${action}`);
   renderTable();
   try {
     await fn();
   } finally {
-    delete state.pendingAccounts[name];
+    delete state.pendingAccounts[key];
     setBusyText('');
     renderTable();
     renderDetail();
   }
 }
 
-async function checkinOne(name) {
-  notify('warn2', '开始签到', `${name} 正在执行签到。`);
-  const data = await api(`/api/accounts/${encodeURIComponent(name)}/checkin`, { method: 'POST', body: '{}' });
-  state.checkinResults[name] = data.result;
-  if (data.result.state === 'FAILED') {
-    state.signinStatus[name] = '未签到';
-    log(`${name} 签到失败：${data.result.message || ''}`, 'bad2');
-    notify('bad2', '签到失败', `${name}：${data.result.message || '未知原因'}`);
-  } else if (data.result.state === 'ALREADY_SIGNED') {
-    state.signinStatus[name] = '已签到';
-    log(`${name} 今日已签到`, 'warn2');
-    notify('warn2', '今日已签到', `${name} 今天已经完成签到。`);
-  } else {
-    state.signinStatus[name] = '已签到';
-    log(`${name} 签到成功`, 'ok');
-    notify('ok', '签到成功', `${name} 已成功签到。`);
-  }
+async function checkinOne(key) {
+  const label = accountLabel(key);
+  notify('warn2', '开始签到', `${label} 正在执行签到。`);
+  const data = await api(`/api/accounts/${encodeURIComponent(key)}/checkin`, { method: 'POST', body: '{}' });
+  state.checkinResults[key] = data.result;
+  if (data.result.state === 'FAILED') { state.signinStatus[key] = '未签到'; log(`${label} 签到失败：${data.result.message || ''}`, 'bad2'); notify('bad2', '签到失败', `${label}：${data.result.message || '未知原因'}`); }
+  else if (data.result.state === 'ALREADY_SIGNED') { state.signinStatus[key] = '已签到'; log(`${label} 今日已签到`, 'warn2'); notify('warn2', '今日已签到', `${label} 今天已经完成签到。`); }
+  else { state.signinStatus[key] = '已签到'; log(`${label} 签到成功`, 'ok'); notify('ok', '签到成功', `${label} 已成功签到。`); }
 }
 
-async function statusOne(name) {
-  notify('warn2', '开始检测', `${name} 正在更新余额与状态信息。`);
-  const data = await api(`/api/accounts/${encodeURIComponent(name)}/status`, { method: 'POST', body: '{}' });
-  state.statusResults[name] = data.result;
+async function statusOne(key) {
+  const label = accountLabel(key);
+  notify('warn2', '开始检测', `${label} 正在更新余额与状态信息。`);
+  const data = await api(`/api/accounts/${encodeURIComponent(key)}/status`, { method: 'POST', body: '{}' });
+  state.statusResults[key] = data.result;
   state.systemStatus = data.system_status || state.systemStatus;
-
   const r = data.result;
-  if (r.session_valid) {
-    const q = r.quota || {};
-    const dc = r.quota_delta || {};
-    const sys = (r && r.system_status) || state.systemStatus;
-    const currentMoney = quotaToMoney(q.quota, sys);
-    const changeMoney = quotaToMoney(dc.change_from_previous, sys);
-    log(`${name} 检测成功：额度=${formatMoney(currentMoney, sys)}，与上次相比=${formatMoney(changeMoney, sys, true)}`, 'ok');
-    notify('ok', '检测完成', `${name} 当前额度 ${formatMoney(currentMoney, sys)}，与上次相比 ${formatMoney(changeMoney, sys, true)}。`);
-  } else if (r.status_state === 'NETWORK_ERROR') {
-    log(`${name} 检测网络异常：${r.api_error || ''}`, 'warn2');
-    notify('warn2', '检测网络异常', `${name}：${r.api_error || '网络请求失败'}`);
-  } else if (r.status_state === 'VERIFICATION_REQUIRED') {
-    log(`${name} 需要验证：${r.api_error || ''}`, 'warn2');
-    notify('warn2', '需要额外验证', `${name}：${r.api_error || '需要验证码或验证步骤'}`);
-  } else if (r.status_state === 'INVALID_SESSION') {
-    log(`${name} 会话失效：${r.api_error || ''}`, 'bad2');
-    notify('bad2', '会话失效', `${name}：${r.api_error || 'Session 可能已过期'}`);
-  } else {
-    log(`${name} 检测失败：${r.api_error || ''}`, 'bad2');
-    notify('bad2', '检测失败', `${name}：${r.api_error || '接口返回异常'}`);
-  }
+  if (r.session_valid) { const q = r.quota || {}; const dc = r.quota_delta || {}; const sys = (r && r.system_status) || state.systemStatus; const currentMoney = quotaToMoney(q.quota, sys); const changeMoney = quotaToMoney(dc.change_from_previous, sys); log(`${label} 检测成功：额度=${formatMoney(currentMoney, sys)}，与上次相比=${formatMoney(changeMoney, sys, true)}`, 'ok'); notify('ok', '检测完成', `${label} 当前额度 ${formatMoney(currentMoney, sys)}，与上次相比 ${formatMoney(changeMoney, sys, true)}。`); }
+  else { log(`${label} 检测失败：${r.api_error || ''}`, r.status_state === 'INVALID_SESSION' ? 'bad2' : 'warn2'); notify(r.status_state === 'INVALID_SESSION' ? 'bad2' : 'warn2', '检测异常', `${label}：${r.api_error || '接口返回异常'}`); }
 }
 
 async function checkinAll() {
   notify('warn2', '开始全部签到', '正在批量执行签到，请稍候。');
   const data = await api('/api/accounts/checkin-all', { method: 'POST', body: '{}' });
-  let okCount = 0;
-  let alreadyCount = 0;
-  let unsignedCount = 0;
+  let okCount = 0, alreadyCount = 0, unsignedCount = 0;
   for (const r of data.results || []) {
-    state.checkinResults[r.account] = r;
-    if (r.state === 'FAILED') {
-      state.signinStatus[r.account] = '未签到';
-      log(`${r.account} 签到失败：${r.message || ''}`, 'bad2');
-      unsignedCount += 1;
-    } else if (r.state === 'ALREADY_SIGNED') {
-      state.signinStatus[r.account] = '已签到';
-      log(`${r.account} 今日已签到`, 'warn2');
-      alreadyCount += 1;
-    } else {
-      state.signinStatus[r.account] = '已签到';
-      log(`${r.account} 签到成功`, 'ok');
-      okCount += 1;
-    }
+    const key = String(r.account_index || ''); const label = accountLabel(key); state.checkinResults[key] = r;
+    if (r.state === 'FAILED') { state.signinStatus[key] = '未签到'; log(`${label} 签到失败：${r.message || ''}`, 'bad2'); unsignedCount += 1; }
+    else if (r.state === 'ALREADY_SIGNED') { state.signinStatus[key] = '已签到'; log(`${label} 今日已签到`, 'warn2'); alreadyCount += 1; }
+    else { state.signinStatus[key] = '已签到'; log(`${label} 签到成功`, 'ok'); okCount += 1; }
   }
   notify('ok', '全部签到完成', `成功 ${okCount} 个，已签到 ${alreadyCount} 个，未签到 ${unsignedCount} 个。`);
 }
@@ -1079,134 +1058,61 @@ async function statusAll() {
   notify('warn2', '开始全部检测', '正在批量更新账号余额与状态。');
   const data = await api('/api/accounts/status-all', { method: 'POST', body: '{}' });
   state.systemStatus = data.system_status || state.systemStatus;
-  let validCount = 0;
-  let failCount = 0;
+  let validCount = 0, failCount = 0;
   for (const r of data.results || []) {
-    state.statusResults[r.account] = r;
-    if (r.session_valid) {
-      const q = r.quota || {};
-      const dc = r.quota_delta || {};
-      const sys = (r && r.system_status) || state.systemStatus;
-      const currentMoney = quotaToMoney(q.quota, sys);
-      const changeMoney = quotaToMoney(dc.change_from_previous, sys);
-      log(`${r.account} 检测成功：额度=${formatMoney(currentMoney, sys)}，与上次相比=${formatMoney(changeMoney, sys, true)}`, 'ok');
-      validCount += 1;
-    } else if (r.status_state === 'NETWORK_ERROR') {
-      log(`${r.account} 检测网络异常：${r.api_error || ''}`, 'warn2');
-      failCount += 1;
-    } else if (r.status_state === 'VERIFICATION_REQUIRED') {
-      log(`${r.account} 需要验证：${r.api_error || ''}`, 'warn2');
-      failCount += 1;
-    } else if (r.status_state === 'INVALID_SESSION') {
-      log(`${r.account} 会话失效：${r.api_error || ''}`, 'bad2');
-      failCount += 1;
-    } else {
-      log(`${r.account} 检测失败：${r.api_error || ''}`, 'bad2');
-      failCount += 1;
-    }
+    const key = String(r.account_index || ''); const label = accountLabel(key); state.statusResults[key] = r;
+    if (r.session_valid) { const q = r.quota || {}; const dc = r.quota_delta || {}; const sys = (r && r.system_status) || state.systemStatus; const currentMoney = quotaToMoney(q.quota, sys); const changeMoney = quotaToMoney(dc.change_from_previous, sys); log(`${label} 检测成功：额度=${formatMoney(currentMoney, sys)}，与上次相比=${formatMoney(changeMoney, sys, true)}`, 'ok'); validCount += 1; }
+    else { log(`${label} 检测异常：${r.api_error || ''}`, 'warn2'); failCount += 1; }
   }
   notify('ok', '全部检测完成', `有效 ${validCount} 个，异常 ${failCount} 个。`);
 }
 
 async function saveForm() {
-  if (!state.editingOriginalName) {
-    notify('warn2', '未选择账号', '右侧只用于编辑已选择的账号；新建请点击顶部“添加账号”。');
-    return;
-  }
-  const payload = buildPayloadFromInputs({
-    name: el.fName,
-    baseUrl: el.fBaseUrl,
-    user: el.fUser,
-    session: el.fSession,
-    keys: el.fKeys,
-    enabled: el.fEnabled,
-  });
-  const errors = validatePayload(payload, {
-    name: el.fName,
-    baseUrl: el.fBaseUrl,
-    user: el.fUser,
-    session: el.fSession,
-    keys: el.fKeys,
-    enabled: el.fEnabled,
-  });
-  if (errors.length) {
-    const message = errors[0];
-    log(`保存失败：${message}`, 'bad2');
-    notify('bad2', '保存失败', message);
-    return;
-  }
-
-  await api(`/api/accounts/${encodeURIComponent(state.editingOriginalName)}`, { method: 'PUT', body: JSON.stringify(payload) });
-  log(`已更新账号：${state.editingOriginalName} -> ${payload.name}`, 'ok');
-  notify('ok', '账号已更新', `${state.editingOriginalName} 已更新为 ${payload.name}。`);
-
+  if (!state.editingAccountKey) { notify('warn2', '未选择账号', '请先点击左侧账号行，再编辑保存。'); return; }
+  const key = state.editingAccountKey;
+  const payload = buildPayloadFromInputs({ name: el.fName, baseUrl: el.fBaseUrl, user: el.fUser, session: el.fSession, keys: el.fKeys, enabled: el.fEnabled });
+  const errors = validatePayload(payload, { name: el.fName, baseUrl: el.fBaseUrl, user: el.fUser, session: el.fSession, keys: el.fKeys, enabled: el.fEnabled });
+  if (errors.length) { const message = errors[0]; log(`保存失败：${message}`, 'bad2'); notify('bad2', '保存失败', message); return; }
+  await api(`/api/accounts/${encodeURIComponent(key)}`, { method: 'PUT', body: JSON.stringify(payload) });
+  log(`已更新账号 #${key}：${payload.name}`, 'ok');
+  notify('ok', '账号已更新', `#${key} 已更新为 ${payload.name}。`);
   await refreshAccounts();
-  selectAccount(payload.name);
-  fillForm(state.selected);
+  selectAccount(key);
 }
 
 async function saveNewAccount() {
-  const payload = buildPayloadFromInputs({
-    name: el.mName,
-    baseUrl: el.mBaseUrl,
-    user: el.mUser,
-    session: el.mSession,
-    keys: el.mKeys,
-    enabled: el.mEnabled,
-  });
-  const errors = validatePayload(payload, {
-    name: el.mName,
-    baseUrl: el.mBaseUrl,
-    user: el.mUser,
-    session: el.mSession,
-    keys: el.mKeys,
-    enabled: el.mEnabled,
-  });
-  if (errors.length) {
-    el.modalError.textContent = errors[0];
-    notify('bad2', '创建失败', errors[0]);
-    return;
-  }
-
+  const payload = buildPayloadFromInputs({ name: el.mName, baseUrl: el.mBaseUrl, user: el.mUser, session: el.mSession, keys: el.mKeys, enabled: el.mEnabled });
+  const errors = validatePayload(payload, { name: el.mName, baseUrl: el.mBaseUrl, user: el.mUser, session: el.mSession, keys: el.mKeys, enabled: el.mEnabled });
+  if (errors.length) { el.modalError.textContent = errors[0]; notify('bad2', '创建失败', errors[0]); return; }
   el.modalError.textContent = '';
-  await api('/api/accounts', { method: 'POST', body: JSON.stringify(payload) });
-  log(`已添加账号：${payload.name}`, 'ok');
-  notify('ok', '账号已添加', `${payload.name} 已加入列表。`);
+  const data = await api('/api/accounts', { method: 'POST', body: JSON.stringify(payload) });
+  const key = accountKey(data.account);
+  log(`已添加账号 #${key}：${payload.name}`, 'ok');
+  notify('ok', '账号已添加', `#${key} ${payload.name} 已加入列表。`);
   closeAddModal();
   await refreshAccounts();
-  selectAccount(payload.name);
+  if (key) selectAccount(key);
 }
 
-async function deleteOne(name) {
-  if (!confirm(`确定删除账号 ${name} 吗？`)) return;
-  await api(`/api/accounts/${encodeURIComponent(name)}`, { method: 'DELETE' });
-  delete state.checkinResults[name];
-  delete state.statusResults[name];
-  if (state.selected && state.selected.name === name) {
-    state.selected = null;
-    fillForm(null);
-  }
-  log(`已删除账号：${name}`, 'ok');
-  notify('ok', '账号已删除', `${name} 已从本地控制台移除。`);
+async function deleteOne(key) {
+  const label = accountLabel(key);
+  if (!confirm(`确定删除账号 ${label} 吗？`)) return;
+  await api(`/api/accounts/${encodeURIComponent(key)}`, { method: 'DELETE' });
+  delete state.checkinResults[key]; delete state.statusResults[key]; delete state.signinStatus[key];
+  if (state.selected && accountKey(state.selected) === String(key)) { state.selected = null; fillForm(null); }
+  log(`已删除账号：${label}`, 'ok');
+  notify('ok', '账号已删除', `${label} 已从本地控制台移除。`);
   await refreshAccounts();
 }
 
-async function toggleOne(name) {
-  const acc = state.accounts.find((a) => a.name === name);
+async function toggleOne(key) {
+  const acc = findAccountByKey(key);
   if (!acc) return;
-  const payload = {
-    name: acc.name,
-    base_url: acc.base_url,
-    new_api_user: acc.new_api_user,
-    session: acc.session,
-    api_keys: acc.api_keys || [],
-    enabled: !acc.enabled,
-  };
-  await api(`/api/accounts/${encodeURIComponent(name)}`, { method: 'PUT', body: JSON.stringify(payload) });
-  log(`账号 ${name} 已${payload.enabled ? '启用' : '停用'}`, 'ok');
-  notify('ok', payload.enabled ? '账号已启用' : '账号已停用', `${name} 当前状态：${payload.enabled ? '启用' : '停用'}。`);
+  const payload = { name: acc.name, base_url: acc.base_url, new_api_user: acc.new_api_user, session: acc.session, api_keys: acc.api_keys || [], enabled: !acc.enabled };
+  await api(`/api/accounts/${encodeURIComponent(key)}`, { method: 'PUT', body: JSON.stringify(payload) });
+  log(`${accountLabel(key)} 已${payload.enabled ? '启用' : '停用'}`, 'ok');
   await refreshAccounts();
-  if (state.selected && state.selected.name === name) selectAccount(name);
+  if (state.selected && accountKey(state.selected) === String(key)) selectAccount(key);
 }
 
 el.btnRefresh.addEventListener('click', () => withGlobalBusy('刷新账号', el.btnRefresh, '刷新中', async () => {
@@ -1233,8 +1139,8 @@ document.getElementById('btn-cancel').addEventListener('click', () => {
   else fillForm(null);
 });
 document.getElementById('btn-delete').addEventListener('click', () => {
-  if (!state.editingOriginalName) return;
-  withGlobalBusy('删除账号', document.getElementById('btn-delete'), '删除中', () => deleteOne(state.editingOriginalName)).catch(e => log(e.message, 'bad2'));
+  if (!state.editingAccountKey) return;
+  withGlobalBusy('删除账号', document.getElementById('btn-delete'), '删除中', () => deleteOne(state.editingAccountKey)).catch(e => log(e.message, 'bad2'));
 });
 el.btnModalCancel.addEventListener('click', () => closeAddModal());
 el.btnModalSave.addEventListener('click', () => withGlobalBusy('创建账号', el.btnModalSave, '创建中', saveNewAccount).catch(e => {
