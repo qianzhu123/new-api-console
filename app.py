@@ -114,6 +114,27 @@ def get_base_url() -> str:
     return DEFAULT_BASE_URL
 
 
+def collect_known_base_urls(config: dict[str, Any] | None = None) -> list[str]:
+    cfg = config if isinstance(config, dict) else load_config()
+    values: list[str] = []
+
+    def add_one(raw: Any) -> None:
+        raw_value = str(raw or "").strip()
+        if not raw_value:
+            return
+        normalized = normalize_base_url(raw_value)
+        if normalized not in values:
+            values.append(normalized)
+
+    add_one(cfg.get("base_url") if isinstance(cfg, dict) else None)
+    for account in cfg.get("accounts", []) if isinstance(cfg, dict) else []:
+        if isinstance(account, dict):
+            add_one(account.get("base_url"))
+
+    add_one(get_base_url())
+    return values
+
+
 def now_ts() -> str:
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
@@ -631,7 +652,6 @@ def request_self_with_retry(session_value: str, user_id: str, base_url: str) -> 
             return resp, payload, None
         except requests.RequestException as exc:
             last_error = f"network error: {exc}"
-            # Small backoff for TLS EOF / transient network conditions.
             if idx < attempts:
                 time.sleep(0.5 * idx)
 
@@ -1109,7 +1129,12 @@ def index() -> str:
 def list_accounts():
     cfg = load_config()
     accounts = build_public_accounts(cfg.get("accounts", []))
-    return jsonify({"ok": True, "accounts": accounts, "default_base_url": normalize_base_url(str(cfg.get("base_url") or get_base_url()))})
+    return jsonify({
+        "ok": True,
+        "accounts": accounts,
+        "default_base_url": normalize_base_url(str(cfg.get("base_url") or get_base_url())),
+        "known_base_urls": collect_known_base_urls(cfg),
+    })
 
 
 @app.route("/api/accounts", methods=["POST"])
@@ -1128,6 +1153,40 @@ def add_account():
     cfg["accounts"] = accounts
     cfg = save_config(cfg)
     return jsonify({"ok": True, "account": to_public_account(new_account, signin_status="未签到", last_status=None), "accounts": build_public_accounts(cfg["accounts"])})
+
+
+@app.route("/api/accounts/reorder", methods=["POST"])
+def reorder_accounts():
+    try:
+        payload = request.get_json(force=True)
+        ordered_ids = payload.get("ordered_ids", []) if isinstance(payload, dict) else []
+        if not isinstance(ordered_ids, list) or not ordered_ids:
+            raise ValueError("ordered_ids is required")
+        wanted_ids = [int(x) for x in ordered_ids]
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+
+    cfg = load_config(normalize_and_persist=False)
+    accounts = cfg.get("accounts", [])
+    existing_ids = []
+    account_map: dict[int, dict[str, Any]] = {}
+    for acc in accounts:
+        if not isinstance(acc, dict):
+            continue
+        try:
+            account_id = int(acc.get("account_index", 0))
+        except (TypeError, ValueError):
+            continue
+        if account_id > 0:
+            existing_ids.append(account_id)
+            account_map[account_id] = acc
+
+    if sorted(existing_ids) != sorted(wanted_ids):
+        return jsonify({"ok": False, "error": "ordered_ids does not match existing accounts"}), 400
+
+    cfg["accounts"] = [account_map[account_id] for account_id in wanted_ids]
+    cfg = save_config(cfg)
+    return jsonify({"ok": True, "accounts": build_public_accounts(cfg["accounts"])})
 
 
 @app.route("/api/accounts/<int:account_index>", methods=["PUT"])
@@ -1191,7 +1250,6 @@ def delete_account(account_index: int):
 
 @app.route("/api/accounts/<int:account_index>/checkin", methods=["POST"])
 def checkin_one(account_index: int):
-    # Daily cleanup: keep only today's sign-in records.
     load_signin_store(normalize_and_persist=True)
     cfg = load_config()
     accounts = cfg.get("accounts", [])
@@ -1210,7 +1268,6 @@ def checkin_one(account_index: int):
 
 @app.route("/api/accounts/checkin-all", methods=["POST"])
 def checkin_all():
-    # Daily cleanup: keep only today's sign-in records.
     load_signin_store(normalize_and_persist=True)
     cfg = load_config()
     accounts = [a for a in cfg.get("accounts", []) if a.get("enabled", True)]
