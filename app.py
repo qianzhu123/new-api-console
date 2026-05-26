@@ -1106,15 +1106,22 @@ def build_public_accounts(accounts: list[dict[str, Any]]) -> list[dict[str, Any]
     signin_map = signin_store.get("accounts", {}) if isinstance(signin_store.get("accounts"), dict) else {}
     status_store = load_status_cache(normalize_and_persist=True)
     status_map = status_store.get("accounts", {}) if isinstance(status_store.get("accounts"), dict) else {}
+    name_counts: dict[str, int] = {}
+    for acc in accounts:
+        name = str(acc.get("name") or "")
+        if name:
+            name_counts[name] = name_counts.get(name, 0) + 1
     out: list[dict[str, Any]] = []
     for acc in accounts:
         account_index = int(acc.get("account_index", 0) or 0)
         name = str(acc.get("name") or "")
         runtime_key = str(account_index) if account_index > 0 else name
-        item = signin_map.get(runtime_key) or signin_map.get(name)
+        item = signin_map.get(runtime_key)
+        if item is None and name_counts.get(name) == 1:
+            item = signin_map.get(name)
         status = item.get("status") if isinstance(item, dict) else "未签到"
         last_status = status_map.get(runtime_key) if isinstance(status_map.get(runtime_key), dict) else None
-        if last_status is None:
+        if last_status is None and name_counts.get(name) == 1:
             last_status = status_map.get(name) if isinstance(status_map.get(name), dict) else None
         out.append(to_public_account(acc, signin_status=status or "未签到", last_status=last_status))
     return out
