@@ -70,7 +70,7 @@
     button.warn { background: var(--warn); box-shadow: 0 3px 10px rgba(183,121,31,.23); }
     button.bad { background: var(--bad); box-shadow: 0 3px 10px rgba(197,48,48,.22); }
     button:disabled { opacity: 0.55; cursor: not-allowed; transform: none; }
-    .grid { display: grid; grid-template-columns: 2fr 1fr; gap: 12px; }
+    .grid { display: grid; grid-template-columns: minmax(0, 1.72fr) minmax(360px, .78fr); gap: 12px; align-items: start; }
     .card {
       background: var(--panel);
       border: 1px solid var(--line);
@@ -79,6 +79,10 @@
       box-shadow: var(--shadow);
     }
     table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    .account-table-wrap { width: 100%; overflow-x: hidden; }
+    .account-table { width: 100%; min-width: 0; table-layout: fixed; }
+    .account-table th,
+    .account-table td { overflow: hidden; text-overflow: ellipsis; }
     th, td { border-bottom: 1px solid var(--line); padding: 9px 7px; text-align: left; vertical-align: top; }
     th { color: #503f2c; font-weight: 700; background: rgba(212,175,55,0.08); }
     tr:hover { background: rgba(106, 160, 125, 0.08); }
@@ -88,12 +92,35 @@
     tr.drag-over-bottom { box-shadow: inset 0 -3px 0 #355c7d; }
     .mono { font-family: Consolas, monospace; }
     .small { color: var(--sub); font-size: 12px; }
-    .row-actions { display: flex; gap: 6px; flex-wrap: wrap; }
-    .row-actions button { padding: 5px 8px; font-size: 12px; }
+    .row-actions { display: flex; gap: 4px; flex-wrap: nowrap; align-items: center; }
+    .row-actions button { padding: 5px 6px; font-size: 12px; min-width: 40px; }
     .tag { display: inline-block; border-radius: 999px; padding: 2px 8px; font-size: 12px; font-weight: 600; }
     .tag.ok { background: rgba(47,133,90,.14); color: #1f6b46; }
     .tag.off { background: rgba(197,48,48,.14); color: #9b2c2c; }
     .tag.run { background: rgba(183,121,31,.14); color: #975a16; }
+    .group-row { background: rgba(212,175,55,0.10); cursor: pointer; }
+    .group-row:hover { background: rgba(212,175,55,0.16); }
+    .group-cell { padding: 12px 7px; overflow: visible !important; }
+    .group-box { display:flex; align-items:center; justify-content:space-between; gap:12px; }
+    .group-main { display:grid; grid-template-columns: 30px minmax(0, 1fr); gap:8px 10px; align-items:center; min-width:0; }
+    .group-url { font-weight:700; word-break:break-all; }
+    .group-stats { grid-column: 2; display:flex; gap:7px; flex-wrap:wrap; color: var(--sub); font-size: 12px; }
+    .group-stat { display:inline-flex; font-weight:600; }
+    .group-actions { display:flex; gap:6px; flex-wrap:nowrap; justify-content:flex-end; flex-shrink:0; }
+    .group-actions button { padding:5px 8px; font-size:12px; }
+    .fold-btn { width:28px; height:28px; padding:0; border-radius:999px; }
+    .status-short { white-space: nowrap; }
+    .list-tools {
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:10px;
+      margin-bottom:10px;
+      flex-wrap:wrap;
+    }
+    .sort-tools { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+    .sort-tools select { width: 150px; height: 34px; padding: 6px 8px; }
+    .sort-tools button { padding: 7px 10px; }
     .drag-handle {
       cursor: grab;
       user-select: none;
@@ -204,12 +231,15 @@
       display: inline-flex;
       align-items: center;
       gap: 6px;
+      max-width: 100%;
       border-radius: 999px;
       padding: 5px 10px;
       font-size: 12px;
       font-weight: 600;
       background: rgba(255,255,255,0.75);
       border: 1px solid rgba(176,139,47,.2);
+      white-space: normal;
+      word-break: break-word;
     }
     .metric-grid {
       display: grid;
@@ -222,6 +252,7 @@
       background: rgba(255,255,255,0.74);
       padding: 10px;
       min-height: 88px;
+      min-width: 0;
       display: flex;
       flex-direction: column;
       justify-content: space-between;
@@ -232,11 +263,12 @@
       font-weight: 600;
     }
     .metric-value {
-      font-size: 26px;
+      font-size: 24px;
       line-height: 1.05;
       font-weight: 700;
       color: #2d3748;
-      letter-spacing: -0.4px;
+      letter-spacing: 0;
+      white-space: nowrap;
     }
     .metric-positive { color: var(--ok); }
     .metric-negative { color: var(--bad); }
@@ -449,8 +481,16 @@
     @media (max-width: 980px) {
       .grid { grid-template-columns: 1fr; }
       .head { flex-direction: column; align-items: flex-start; }
-      .metric-grid { grid-template-columns: 1fr; }
       .modal-grid { grid-template-columns: 1fr; }
+    }
+    @media (max-width: 1280px) and (min-width: 981px) {
+      .row-actions { gap: 3px; }
+      .row-actions button { padding: 5px 5px; font-size: 11px; min-width: 36px; }
+      .metric-value { font-size: 22px; }
+    }
+    @media (max-width: 560px) {
+      .metric-grid { grid-template-columns: 1fr; }
+      .metric-value { white-space: normal; overflow-wrap: anywhere; }
     }
   </style>
 </head>
@@ -472,21 +512,45 @@
 
     <div class="grid">
       <div class="card">
-        <table>
-          <thead>
-            <tr>
-              <th style="width:36px;" aria-label="排序"></th>
-              <th>序号</th>
-              <th>账号名</th>
-              <th>状态</th>
-              <th>new_api_user</th>
-              <th>今日签到状态</th>
-              <th>状态结果</th>
-              <th>操作</th>
-            </tr>
-          </thead>
-          <tbody id="account-body"></tbody>
-        </table>
+        <div class="list-tools">
+          <div class="small">地址分组列表</div>
+          <div class="sort-tools" aria-label="账号排序">
+            <select id="sort-field" title="排序字段">
+              <option value="manual">手动排序</option>
+              <option value="new_api_user">new_api_user</option>
+              <option value="quota">额度</option>
+            </select>
+            <button id="btn-sort-dir" class="secondary" type="button" title="切换升降序">降序</button>
+            <button id="btn-apply-sort" class="warn" type="button">排序</button>
+          </div>
+        </div>
+        <div class="account-table-wrap">
+          <table class="account-table">
+            <colgroup>
+              <col style="width:4%;">
+              <col style="width:6%;">
+              <col style="width:17%;">
+              <col style="width:9%;">
+              <col style="width:13%;">
+              <col style="width:13%;">
+              <col style="width:10%;">
+              <col style="width:28%;">
+            </colgroup>
+            <thead>
+              <tr>
+                <th aria-label="排序"></th>
+                <th>序号</th>
+                <th>账号名</th>
+                <th>状态</th>
+                <th>new_api_user</th>
+                <th>今日签到状态</th>
+                <th>状态结果</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody id="account-body"></tbody>
+          </table>
+        </div>
       </div>
 
       <div class="card">
@@ -597,6 +661,9 @@ const state = {
   pendingGlobal: false,
   pendingAccounts: {},
   dragKey: null,
+  collapsedGroups: {},
+  sortField: 'manual',
+  sortDir: 'desc',
 };
 
 const el = {
@@ -628,6 +695,9 @@ const el = {
   btnCheckinAll: document.getElementById('btn-checkin-all'),
   btnStatusAll: document.getElementById('btn-status-all'),
   btnNew: document.getElementById('btn-new'),
+  sortField: document.getElementById('sort-field'),
+  btnSortDir: document.getElementById('btn-sort-dir'),
+  btnApplySort: document.getElementById('btn-apply-sort'),
   fBaseUrlList: document.getElementById('f-base-url-list'),
   mBaseUrlList: document.getElementById('m-base-url-list'),
 };
@@ -671,6 +741,13 @@ function formatShortTs(ts) { const s = quoteText(ts).trim(); if (!s) return '-';
 function accountKey(acc) { return String(acc?.account_index || ''); }
 function findAccountByKey(key) { return state.accounts.find((a) => accountKey(a) === String(key)) || null; }
 function accountLabel(accOrKey) { const acc = typeof accOrKey === 'object' ? accOrKey : findAccountByKey(accOrKey); if (!acc) return `#${accOrKey}`; return `#${displayIndexByKey(accountKey(acc))} ${acc.name || ''}`.trim(); }
+function getAccountStatus(acc) { const key = accountKey(acc); return state.statusResults[key] || acc?.last_status || null; }
+function getAccountQuotaMoney(acc) {
+  const sr = getAccountStatus(acc);
+  if (!sr || !(sr.status_state === 'VALID' || sr.session_valid)) return null;
+  const money = quotaToMoney(sr?.quota?.quota, sr?.system_status || state.systemStatus);
+  return Number.isFinite(money) ? money : null;
+}
 function maskTag(enabled) { return enabled ? '<span class="tag ok">启用</span>' : '<span class="tag off">停用</span>'; }
 function setFieldInvalid(node, invalid) { if (node) node.classList.toggle('input-invalid', !!invalid); }
 function clearFieldStates(nodes) { for (const node of nodes) setFieldInvalid(node, false); }
@@ -863,11 +940,10 @@ function renderRowSummary(key) {
   const checkinText = state.signinStatus[key] || '未签到';
   let statusText = '-';
   if (s) {
-    if (s.status_state === 'VALID') statusText = '有效';
-    else if (s.status_state === 'NETWORK_ERROR') statusText = `网络异常 ${s.api_error || ''}`;
-    else if (s.status_state === 'VERIFICATION_REQUIRED') statusText = `需要验证 ${s.api_error || ''}`;
-    else if (s.status_state === 'INVALID_SESSION') statusText = `会话失效 ${s.api_error || ''}`;
-    else statusText = `接口异常 ${s.api_error || ''}`;
+    statusText = (s.status_state === 'VALID' || s.session_valid) ? '有效' : '异常';
+    if (statusText === '异常') {
+      console.warn('账号检测异常', s.account || '', s.api_error || '', s);
+    }
   }
   return { checkinText, statusText };
 }
@@ -912,41 +988,112 @@ function attachDragEvents(tr, key) {
   });
 }
 
+function getGroupedAccounts() {
+  const map = new Map();
+  for (const acc of state.accounts) {
+    const url = normalizeBaseUrlInput(acc.base_url || state.defaultBaseUrl || '未设置地址') || '未设置地址';
+    if (!map.has(url)) map.set(url, []);
+    map.get(url).push(acc);
+  }
+  return Array.from(map.entries()).map(([baseUrl, accounts]) => ({ baseUrl, accounts }));
+}
+
+function groupKeyFromUrl(url) { return `base:${url}`; }
+
+function getGroupStats(accounts) {
+  let enabled = 0, signed = 0, valid = 0, totalMoney = 0, hasMoney = false, systemStatus = null;
+  for (const acc of accounts) {
+    const key = accountKey(acc);
+    if (acc.enabled) enabled += 1;
+    if ((state.signinStatus[key] || acc.signin_status) === '已签到') signed += 1;
+    const sr = getAccountStatus(acc);
+    if (sr && (sr.status_state === 'VALID' || sr.session_valid)) {
+      valid += 1;
+      const sys = sr?.system_status || state.systemStatus;
+      if (!systemStatus && sys) systemStatus = sys;
+      const money = quotaToMoney(sr?.quota?.quota, sys);
+      if (Number.isFinite(money)) { totalMoney += money; hasMoney = true; }
+    }
+  }
+  return { enabled, signed, valid, totalMoney: hasMoney ? totalMoney : null, systemStatus };
+}
+
+function renderGroupRow(group) {
+  const key = groupKeyFromUrl(group.baseUrl);
+  const collapsed = !!state.collapsedGroups[key];
+  const stats = getGroupStats(group.accounts);
+  const tr = document.createElement('tr');
+  tr.className = 'group-row';
+  tr.title = '点击地址分组可展开或折叠';
+  tr.addEventListener('click', (e) => {
+    if (e.target.closest('button')) return;
+    state.collapsedGroups[key] = !state.collapsedGroups[key];
+    renderTable();
+  });
+  tr.innerHTML = `
+    <td class="group-cell" colspan="8">
+      <div class="group-box">
+        <div class="group-main">
+          <button type="button" class="fold-btn secondary" data-group-action="toggle" data-group-key="${key}" title="展开/折叠">${collapsed ? '▶' : '▼'}</button>
+          <span class="group-url mono">${group.baseUrl}</span>
+          <span class="group-stats">
+            <span class="group-stat">账号数 ${group.accounts.length}</span>
+            <span class="group-stat">可用数 ${stats.valid}</span>
+            <span class="group-stat">今日签到数 ${stats.signed}</span>
+            <span class="group-stat">总额度 ${formatMoney(stats.totalMoney, stats.systemStatus || state.systemStatus)}</span>
+          </span>
+        </div>
+        <div class="group-actions">
+          <button type="button" data-group-action="checkin" data-group-key="${key}">全部签到</button>
+          <button type="button" class="secondary" data-group-action="status" data-group-key="${key}">全部检测</button>
+        </div>
+      </div>
+    </td>`;
+  return tr;
+}
+
 function renderTable() {
   el.body.innerHTML = '';
-  state.accounts.forEach((acc, index) => {
-    const key = accountKey(acc);
-    const tr = document.createElement('tr');
-    if (state.selected && accountKey(state.selected) === key) tr.classList.add('selected');
-    tr.addEventListener('click', () => selectAccount(key));
-    attachDragEvents(tr, key);
+  for (const group of getGroupedAccounts()) {
+    const groupKey = groupKeyFromUrl(group.baseUrl);
+    el.body.appendChild(renderGroupRow(group));
+    if (state.collapsedGroups[groupKey]) continue;
 
-    const running = !!state.pendingAccounts[key];
-    const rowSum = renderRowSummary(key);
-    const activeAction = state.pendingAccounts[key];
-    const checkinLabel = activeAction === 'checkin' ? '签到中' : '签到';
-    const statusLabel = activeAction === 'status' ? '检测中' : '检测';
-    const deleteLabel = activeAction === 'delete' ? '处理中' : '删除';
+    group.accounts.forEach((acc) => {
+      const key = accountKey(acc);
+      const index = state.accounts.findIndex((item) => accountKey(item) === key);
+      const tr = document.createElement('tr');
+      if (state.selected && accountKey(state.selected) === key) tr.classList.add('selected');
+      tr.addEventListener('click', () => selectAccount(key));
+      attachDragEvents(tr, key);
 
-    tr.innerHTML = `
-      <td class="drag-handle" aria-label="排序">☰</td>
-      <td class="mono">${index + 1}</td>
-      <td>${acc.name || ''}</td>
-      <td>${running ? '<span class="tag run">处理中</span>' : maskTag(acc.enabled)}</td>
-      <td class="mono">${acc.new_api_user || ''}</td>
-      <td class="small">${rowSum.checkinText}</td>
-      <td class="small">${rowSum.statusText}</td>
-      <td>
-        <div class="row-actions">
-          <button data-action="copy" data-key="${key}" class="secondary" ${running ? 'disabled' : ''}>复制APIKey</button>
-          <button data-action="checkin" data-key="${key}" class="${activeAction === 'checkin' ? 'busy-button' : ''}" ${running ? 'disabled' : ''}>${checkinLabel}</button>
-          <button data-action="status" data-key="${key}" class="secondary ${activeAction === 'status' ? 'busy-button' : ''}" ${running ? 'disabled' : ''}>${statusLabel}</button>
-          <button data-action="delete" data-key="${key}" class="bad ${activeAction === 'delete' ? 'busy-button' : ''}" ${running ? 'disabled' : ''}>${deleteLabel}</button>
-        </div>
-      </td>
-    `;
-    el.body.appendChild(tr);
-  });
+      const running = !!state.pendingAccounts[key];
+      const rowSum = renderRowSummary(key);
+      const activeAction = state.pendingAccounts[key];
+      const checkinLabel = activeAction === 'checkin' ? '签到中' : '签到';
+      const statusLabel = activeAction === 'status' ? '检测中' : '检测';
+      const deleteLabel = activeAction === 'delete' ? '处理中' : '删除';
+
+      tr.innerHTML = `
+        <td class="drag-handle" aria-label="排序">☰</td>
+        <td class="mono">${index + 1}</td>
+        <td>${acc.name || ''}</td>
+        <td>${running ? '<span class="tag run">处理中</span>' : maskTag(acc.enabled)}</td>
+        <td class="mono">${acc.new_api_user || ''}</td>
+        <td class="small">${rowSum.checkinText}</td>
+        <td class="small status-short" title="${(state.statusResults[key]?.api_error || '').replace(/"/g, '&quot;')}">${rowSum.statusText}</td>
+        <td>
+          <div class="row-actions">
+            <button data-action="copy" data-key="${key}" class="secondary" title="复制APIKey" ${running ? 'disabled' : ''}>复制</button>
+            <button data-action="checkin" data-key="${key}" class="${activeAction === 'checkin' ? 'busy-button' : ''}" ${running ? 'disabled' : ''}>${checkinLabel}</button>
+            <button data-action="status" data-key="${key}" class="secondary ${activeAction === 'status' ? 'busy-button' : ''}" ${running ? 'disabled' : ''}>${statusLabel}</button>
+            <button data-action="delete" data-key="${key}" class="bad ${activeAction === 'delete' ? 'busy-button' : ''}" ${running ? 'disabled' : ''}>${deleteLabel}</button>
+          </div>
+        </td>
+      `;
+      el.body.appendChild(tr);
+    });
+  }
 
   for (const btn of el.body.querySelectorAll('button[data-action]')) {
     btn.addEventListener('click', async (e) => {
@@ -957,6 +1104,29 @@ function renderTable() {
       if (action === 'checkin') await withAccountBusy(key, 'checkin', () => checkinOne(key));
       if (action === 'status') await withAccountBusy(key, 'status', () => statusOne(key));
       if (action === 'delete') await withAccountBusy(key, 'delete', () => deleteOne(key));
+    });
+  }
+
+  for (const btn of el.body.querySelectorAll('button[data-group-action]')) {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const action = btn.dataset.groupAction;
+      const key = btn.dataset.groupKey;
+      const group = getGroupedAccounts().find((g) => groupKeyFromUrl(g.baseUrl) === key);
+      if (!group) return;
+      if (action === 'toggle') {
+        state.collapsedGroups[key] = !state.collapsedGroups[key];
+        renderTable();
+        return;
+      }
+      if (action === 'checkin') {
+        await runGroupCheckin(group);
+        return;
+      }
+      if (action === 'status') {
+        await runGroupStatus(group);
+        return;
+      }
     });
   }
 }
@@ -1015,6 +1185,7 @@ function renderDetail() {
       </div>
     </div>
     <div class="small" style="margin-top:12px;">上次检测时间：${prevTime}${sourceTip}</div>
+    ${sr && !sr.session_valid ? `<div class="small bad2" style="margin-top:8px; word-break:break-word;">异常信息：${sr.api_error || '接口返回异常'}<\/div>` : ''}
   `;
   flashDetail();
   fillForm(acc);
@@ -1063,12 +1234,12 @@ async function withGlobalBusy(text, button, busyText, fn) {
   if (state.pendingGlobal) return;
   state.pendingGlobal = true;
   setButtonBusy(button, true, busyText);
-  for (const btn of [el.btnRefresh, el.btnCheckinAll, el.btnStatusAll, el.btnNew]) if (btn !== button) btn.disabled = true;
+  for (const btn of [el.btnRefresh, el.btnCheckinAll, el.btnStatusAll, el.btnNew, el.btnSortDir, el.btnApplySort]) if (btn && btn !== button) btn.disabled = true;
   setBusyText(`正在执行：${text}`);
   try { await fn(); } finally {
     state.pendingGlobal = false;
     setButtonBusy(button, false);
-    for (const btn of [el.btnRefresh, el.btnCheckinAll, el.btnStatusAll, el.btnNew]) if (btn !== button) btn.disabled = false;
+    for (const btn of [el.btnRefresh, el.btnCheckinAll, el.btnStatusAll, el.btnNew, el.btnSortDir, el.btnApplySort]) if (btn && btn !== button) btn.disabled = false;
     setBusyText('');
   }
 }
@@ -1106,6 +1277,8 @@ async function reorderAccounts(fromKey, toKey, before) {
   const fromIndex = state.accounts.findIndex((acc) => accountKey(acc) === String(fromKey));
   const toIndex = state.accounts.findIndex((acc) => accountKey(acc) === String(toKey));
   if (fromIndex < 0 || toIndex < 0 || fromIndex === toIndex) return;
+  state.sortField = 'manual';
+  if (el.sortField) el.sortField.value = 'manual';
   const moved = state.accounts.splice(fromIndex, 1)[0];
   let insertIndex = toIndex;
   if (fromIndex < toIndex) insertIndex -= 1;
@@ -1185,6 +1358,80 @@ async function statusAll() {
   notify('ok', '全部检测完成', `有效 ${validCount} 个，异常 ${failCount} 个。`);
 }
 
+
+async function runGroupCheckin(group) {
+  const accounts = group.accounts.filter((acc) => acc.enabled);
+  notify('warn2', '开始地址签到', `${group.baseUrl}：共 ${accounts.length} 个启用账号。`);
+  for (const acc of accounts) {
+    const key = accountKey(acc);
+    await withAccountBusy(key, 'checkin', () => checkinOne(key));
+  }
+  renderTable();
+  renderDetail();
+  notify('ok', '地址签到完成', `${group.baseUrl} 已执行完成。`);
+}
+
+async function runGroupStatus(group) {
+  const accounts = group.accounts.filter((acc) => acc.enabled);
+  notify('warn2', '开始地址检测', `${group.baseUrl}：共 ${accounts.length} 个启用账号。`);
+  for (const acc of accounts) {
+    const key = accountKey(acc);
+    await withAccountBusy(key, 'status', () => statusOne(key));
+  }
+  renderTable();
+  renderDetail();
+  notify('ok', '地址检测完成', `${group.baseUrl} 已执行完成。`);
+}
+
+function compareAccountsForSort(a, b, indexMap) {
+  const dir = state.sortDir === 'asc' ? 1 : -1;
+  if (state.sortField === 'new_api_user') {
+    const av = Number(a.new_api_user);
+    const bv = Number(b.new_api_user);
+    const aOk = Number.isFinite(av);
+    const bOk = Number.isFinite(bv);
+    if (aOk && bOk && av !== bv) return (av - bv) * dir;
+    if (aOk !== bOk) return aOk ? -1 : 1;
+  }
+  if (state.sortField === 'quota') {
+    const av = getAccountQuotaMoney(a);
+    const bv = getAccountQuotaMoney(b);
+    const aOk = Number.isFinite(av);
+    const bOk = Number.isFinite(bv);
+    if (aOk && bOk && av !== bv) return (av - bv) * dir;
+    if (aOk !== bOk) return aOk ? -1 : 1;
+  }
+  return (indexMap.get(accountKey(a)) || 0) - (indexMap.get(accountKey(b)) || 0);
+}
+
+async function applyTopSort() {
+  state.sortField = el.sortField.value || 'manual';
+  if (state.sortField === 'manual') {
+    notify('warn2', '请选择排序字段', '可以选择 new_api_user 或额度进行排序。');
+    return;
+  }
+  if (state.sortField === 'quota' && !state.accounts.some((acc) => Number.isFinite(getAccountQuotaMoney(acc)))) {
+    notify('warn2', '缺少额度数据', '请先执行全部检测或单账号检测，再按额度排序。');
+    return;
+  }
+  const indexMap = new Map(state.accounts.map((acc, index) => [accountKey(acc), index]));
+  state.accounts = [...state.accounts].sort((a, b) => compareAccountsForSort(a, b, indexMap));
+  renderTable();
+  try {
+    await api('/api/accounts/reorder', {
+      method: 'POST',
+      body: JSON.stringify({ ordered_ids: state.accounts.map((acc) => Number(acc.account_index)) })
+    });
+    const label = state.sortField === 'quota' ? '额度' : 'new_api_user';
+    notify('ok', '排序已更新', `${label} 已按${state.sortDir === 'asc' ? '升序' : '降序'}排列。`);
+    log(`排序已更新：${label} ${state.sortDir === 'asc' ? '升序' : '降序'}`, 'ok');
+  } catch (e) {
+    notify('bad2', '排序失败', e.message || String(e));
+    log(`排序失败：${e.message || e}`, 'bad2');
+    await refreshAccounts();
+  }
+}
+
 async function saveForm() {
   if (!state.editingAccountKey) { notify('warn2', '未选择账号', '请先点击左侧账号行，再编辑保存。'); return; }
   const key = state.editingAccountKey;
@@ -1241,6 +1488,15 @@ el.btnStatusAll.addEventListener('click', () => withGlobalBusy('全部检测', e
   renderTable();
   renderDetail();
 }).catch(e => log(e.message, 'bad2')));
+
+el.sortField.addEventListener('change', () => {
+  state.sortField = el.sortField.value || 'manual';
+});
+el.btnSortDir.addEventListener('click', () => {
+  state.sortDir = state.sortDir === 'asc' ? 'desc' : 'asc';
+  el.btnSortDir.textContent = state.sortDir === 'asc' ? '升序' : '降序';
+});
+el.btnApplySort.addEventListener('click', () => withGlobalBusy('账号排序', el.btnApplySort, '排序中', applyTopSort).catch(e => log(e.message, 'bad2')));
 
 document.getElementById('btn-new').addEventListener('click', () => openAddModal());
 document.getElementById('btn-save').addEventListener('click', () => withGlobalBusy('保存账号', document.getElementById('btn-save'), '保存中', saveForm).catch(e => log(e.message, 'bad2')));
