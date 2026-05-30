@@ -1316,6 +1316,7 @@ async function statusOne(key) {
   notify('warn2', '开始检测', `${label} 正在更新余额与状态信息。`);
   const data = await api(`/api/accounts/${encodeURIComponent(key)}/status`, { method: 'POST', body: '{}' });
   state.statusResults[key] = data.result;
+  state.signinStatus[key] = data.result.signin_status;
   state.systemStatus = data.system_status || state.systemStatus;
   const r = data.result;
   if (r.session_valid) {
@@ -1352,6 +1353,7 @@ async function statusAll() {
     const key = String(r.account_index || '');
     const label = accountLabel(key);
     state.statusResults[key] = r;
+    state.signinStatus[key] = r.signin_status;
     if (r.session_valid) { log(`${label} 检测成功`, 'ok'); validCount += 1; }
     else { log(`${label} 检测异常：${r.api_error || ''}`, 'warn2'); failCount += 1; }
   }

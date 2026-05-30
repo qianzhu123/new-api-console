@@ -1304,6 +1304,7 @@ def status_one(account_index: int):
     system_status = fetch_public_status(base_url=account_base_url)
     result = check_status(accounts[idx], system_status=system_status)
     result["account_index"] = account_index
+    result["signin_status"] = get_signin_status_today(str(account_index))
     set_status_cache(str(account_index), result)
     return jsonify({"ok": True, "result": result, "system_status": system_status})
 
@@ -1321,9 +1322,11 @@ def status_all():
         system_status = system_status_cache[account_base_url]
         result = check_status(acc, system_status=system_status)
         account_index = int(acc.get("account_index", 0) or 0)
+        runtime_key = str(account_index) if account_index > 0 else str(acc.get("name") or "")
         result["account_index"] = account_index
+        result["signin_status"] = get_signin_status_today(runtime_key)
         results.append(result)
-        set_status_cache(str(account_index) if account_index > 0 else str(acc.get("name") or ""), result)
+        set_status_cache(runtime_key, result)
     default_base_url = normalize_base_url(str(get_base_url()))
     return jsonify({"ok": True, "results": results, "system_status": system_status_cache.get(default_base_url) or fetch_public_status(base_url=default_base_url)})
 
