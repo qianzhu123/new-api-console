@@ -4,8 +4,9 @@ import pathlib
 import tempfile
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
-from typing import Any
+from typing import Any, Callable
 
 import requests
 from flask import Flask, jsonify, render_template, request
@@ -26,6 +27,15 @@ CHECKIN_PATH = "/api/user/checkin"
 SELF_PATH = "/api/user/self"
 STATUS_PATH = "/api/status"
 TIMEOUT_SECONDS = 20
+def parse_positive_int_env(name: str, default: int) -> int:
+    try:
+        value = int(os.getenv(name, str(default)) or str(default))
+    except ValueError:
+        return default
+    return max(1, value)
+
+
+MAX_BATCH_WORKERS = parse_positive_int_env("QIANDAO_MAX_BATCH_WORKERS", 8)
 DEFAULT_HEADERS = {
     "accept": "application/json, text/plain, */*",
     "cache-control": "no-store",
@@ -54,6 +64,20 @@ app = Flask(__name__)
 app.config["TEMPLATES_AUTO_RELOAD"] = True
 app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 0
 config_lock = threading.RLock()
+
+
+def get_batch_worker_count(item_count: int) -> int:
+    if item_count <= 0:
+        return 1
+    return max(1, min(MAX_BATCH_WORKERS, item_count))
+
+
+def run_batch_parallel(items: list[Any], worker: Callable[[Any], Any]) -> list[Any]:
+    worker_count = get_batch_worker_count(len(items))
+    if worker_count <= 1:
+        return [worker(item) for item in items]
+    with ThreadPoolExecutor(max_workers=worker_count) as executor:
+        return list(executor.map(worker, items))
 
 
 @app.after_request
@@ -1278,8 +1302,8 @@ def checkin_all():
     load_signin_store(normalize_and_persist=True)
     cfg = load_config()
     accounts = [a for a in cfg.get("accounts", []) if a.get("enabled", True)]
-    results = []
-    for acc in accounts:
+
+    def checkin_account(acc: dict[str, Any]) -> dict[str, Any]:
         result = classify_checkin(acc)
         account_name = str(acc.get("name") or "")
         account_index = int(acc.get("account_index", 0) or 0)
@@ -1289,7 +1313,9 @@ def checkin_all():
             set_signin_status_today(runtime_key, "已签到")
         elif result.get("state") == "FAILED":
             set_signin_status_today(runtime_key, "未签到")
-        results.append(result)
+        return result
+
+    results = run_batch_parallel(accounts, checkin_account)
     return jsonify({"ok": True, "results": results})
 
 
@@ -1313,20 +1339,27 @@ def status_one(account_index: int):
 def status_all():
     cfg = load_config()
     accounts = [a for a in cfg.get("accounts", []) if a.get("enabled", True)]
-    system_status_cache: dict[str, dict[str, Any]] = {}
-    results = []
+    base_urls = []
     for acc in accounts:
+        base_url = normalize_base_url(str(acc.get("base_url") or get_base_url()))
+        if base_url not in base_urls:
+            base_urls.append(base_url)
+
+    fetched_statuses = run_batch_parallel(base_urls, lambda base_url: (base_url, fetch_public_status(base_url=base_url)))
+    system_status_cache: dict[str, dict[str, Any]] = dict(fetched_statuses)
+
+    def check_account_status(acc: dict[str, Any]) -> dict[str, Any]:
         account_base_url = normalize_base_url(str(acc.get("base_url") or get_base_url()))
-        if account_base_url not in system_status_cache:
-            system_status_cache[account_base_url] = fetch_public_status(base_url=account_base_url)
-        system_status = system_status_cache[account_base_url]
+        system_status = system_status_cache.get(account_base_url, {})
         result = check_status(acc, system_status=system_status)
         account_index = int(acc.get("account_index", 0) or 0)
         runtime_key = str(account_index) if account_index > 0 else str(acc.get("name") or "")
         result["account_index"] = account_index
         result["signin_status"] = get_signin_status_today(runtime_key)
-        results.append(result)
         set_status_cache(runtime_key, result)
+        return result
+
+    results = run_batch_parallel(accounts, check_account_status)
     default_base_url = normalize_base_url(str(get_base_url()))
     return jsonify({"ok": True, "results": results, "system_status": system_status_cache.get(default_base_url) or fetch_public_status(base_url=default_base_url)})
 
