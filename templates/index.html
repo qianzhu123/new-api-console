@@ -22,6 +22,7 @@
       --btn2: #6b7280;
       --accent: #d4af37;
       --shadow: 0 10px 30px rgba(68, 52, 31, 0.08);
+      --action-col: 168px;
     }
     * { box-sizing: border-box; }
     body {
@@ -92,8 +93,12 @@
     tr.drag-over-bottom { box-shadow: inset 0 -3px 0 #355c7d; }
     .mono { font-family: Consolas, monospace; }
     .small { color: var(--sub); font-size: 12px; }
-    .row-actions { display: flex; gap: 4px; flex-wrap: nowrap; align-items: center; }
+    .row-actions { display: flex; gap: 6px; flex-wrap: nowrap; align-items: center; width: 100%; }
     .row-actions button { padding: 5px 6px; font-size: 12px; min-width: 40px; }
+    .account-table th:nth-child(8),
+    .account-table td:nth-child(8) { width: var(--action-col); }
+    .row-actions { justify-content: flex-start; }
+    .row-actions button { flex: 0 0 auto; }
     .tag { display: inline-block; border-radius: 999px; padding: 2px 8px; font-size: 12px; font-weight: 600; }
     .tag.ok { background: rgba(47,133,90,.14); color: #1f6b46; }
     .tag.off { background: rgba(197,48,48,.14); color: #9b2c2c; }
@@ -101,12 +106,12 @@
     .group-row { background: rgba(212,175,55,0.10); cursor: pointer; }
     .group-row:hover { background: rgba(212,175,55,0.16); }
     .group-cell { padding: 12px 7px; overflow: visible !important; }
-    .group-box { display:flex; align-items:center; justify-content:space-between; gap:12px; }
+    .group-box { display:grid; grid-template-columns:minmax(0, 1fr) var(--action-col); align-items:center; gap:12px; }
     .group-main { display:grid; grid-template-columns: 30px minmax(0, 1fr); gap:8px 10px; align-items:center; min-width:0; }
     .group-url { font-weight:700; word-break:break-all; }
     .group-stats { grid-column: 2; display:flex; gap:7px; flex-wrap:wrap; color: var(--sub); font-size: 12px; }
     .group-stat { display:inline-flex; font-weight:600; }
-    .group-actions { display:flex; gap:6px; flex-wrap:nowrap; justify-content:flex-end; flex-shrink:0; }
+    .group-actions { display:flex; gap:10px; flex-wrap:nowrap; justify-content:flex-end; flex-shrink:0; }
     .group-actions button { padding:5px 8px; font-size:12px; }
     .fold-btn { width:28px; height:28px; padding:0; border-radius:999px; }
     .status-short { white-space: nowrap; }
@@ -478,6 +483,102 @@
       from { transform: rotate(0deg); }
       to { transform: rotate(360deg); }
     }
+    .token-panel {
+      margin-top: 12px;
+      border-top: 1px solid rgba(216,196,167,.68);
+      padding-top: 12px;
+    }
+    .token-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 10px;
+    }
+    .token-title { font-weight: 700; color: #503f2c; }
+    .token-actions { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+    .token-actions button { padding: 6px 9px; font-size: 12px; }
+    .token-section-label {
+      margin: 8px 0 6px;
+      color: var(--sub);
+      font-size: 12px;
+      font-weight: 700;
+    }
+    .token-groups,
+    .token-list {
+      max-height: 178px;
+      overflow: auto;
+      border: 1px solid rgba(216,196,167,.72);
+      border-radius: 10px;
+      background: rgba(255,255,255,.52);
+      padding: 6px;
+      overscroll-behavior: contain;
+    }
+    .token-groups::-webkit-scrollbar,
+    .token-list::-webkit-scrollbar { width: 8px; }
+    .token-groups::-webkit-scrollbar-thumb,
+    .token-list::-webkit-scrollbar-thumb {
+      border-radius: 999px;
+      background: rgba(176,139,47,.34);
+      border: 2px solid rgba(255,253,248,.95);
+    }
+    .token-group-item {
+      width: 100%;
+      border: 1px solid transparent;
+      border-radius: 8px;
+      padding: 7px 8px;
+      background: transparent;
+      box-shadow: none;
+      color: var(--text);
+      text-align: left;
+    }
+    .token-group-item:hover,
+    .token-group-item.active {
+      transform: none;
+      color: var(--text);
+      background: rgba(212,175,55,.16);
+      border-color: rgba(216,196,167,.72);
+    }
+    .token-group-id { font-weight: 700; word-break: break-all; }
+    .token-group-desc { margin-top: 2px; color: var(--sub); font-size: 12px; line-height: 1.35; word-break: break-word; }
+    .token-group-ratio { margin-top: 3px; color: #5f4e3b; font-size: 11px; font-weight: 700; }
+    .token-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 8px;
+      align-items: start;
+      padding: 8px 4px;
+      border-bottom: 1px solid rgba(216,196,167,.55);
+    }
+    .token-row:last-child { border-bottom: 0; }
+    .token-meta { min-width: 0; }
+    .token-name { font-weight: 700; color: #503f2c; word-break: break-word; }
+    .token-key { margin-top: 3px; word-break: break-all; color: #3a2d1f; font-size: 12px; }
+    .token-group { margin-top: 2px; color: var(--sub); font-size: 12px; word-break: break-word; }
+    .token-row-actions { display: flex; gap: 5px; flex-wrap: nowrap; }
+    .token-row-actions button { padding: 5px 7px; font-size: 12px; min-width: 38px; }
+    .token-empty {
+      padding: 12px;
+      color: var(--sub);
+      font-size: 12px;
+      text-align: center;
+    }
+    .token-modal-card { width: min(620px, 100%); }
+    .token-modal-groups { max-height: 310px; }
+    .token-modal-create {
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+      margin-top: 14px;
+    }
+    .confirm-modal-card { width: min(460px, 100%); }
+    .confirm-message {
+      margin: 14px 0 18px;
+      color: #3a2d1f;
+      font-size: 15px;
+      line-height: 1.55;
+      word-break: break-word;
+    }
     @media (max-width: 980px) {
       .grid { grid-template-columns: 1fr; }
       .head { flex-direction: column; align-items: flex-start; }
@@ -500,7 +601,7 @@
     <div class="head">
       <div>
         <h1>new-api 本地控制台</h1>
-        <div class="sub">一键签到、账号状态检测、余额变化跟踪、账号/API Key 管理</div>
+        <div class="sub">一键签到、账号状态检测、余额变化跟踪、账号令牌管理</div>
       </div>
       <div class="bar">
         <button id="btn-refresh" class="secondary">刷新账号</button>
@@ -583,10 +684,6 @@
             <label for="f-session">Session</label>
             <textarea id="f-session"></textarea>
           </div>
-          <div class="form-group">
-            <label for="f-keys">API Key（每行一个）</label>
-            <textarea id="f-keys"></textarea>
-          </div>
           <div class="form-group inline">
             <input type="checkbox" id="f-enabled" checked />
             <label for="f-enabled" style="margin:0;">启用账号</label>
@@ -628,10 +725,6 @@
           <label for="m-session">Session</label>
           <textarea id="m-session"></textarea>
         </div>
-        <div class="form-group span-2">
-          <label for="m-keys">API Key（每行一个）</label>
-          <textarea id="m-keys"></textarea>
-        </div>
         <div class="form-group span-2 inline">
           <input type="checkbox" id="m-enabled" checked />
           <label for="m-enabled" style="margin:0;">立即启用该账号</label>
@@ -643,6 +736,37 @@
       <div class="modal-actions">
         <button id="btn-modal-cancel" class="secondary">取消</button>
         <button id="btn-modal-save">创建账号</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="token-modal" class="modal-shell" aria-hidden="true">
+    <div class="modal-card token-modal-card">
+      <h3 class="modal-title">添加令牌</h3>
+      <div class="modal-sub" id="token-modal-sub">选择分组并填写令牌名称。</div>
+
+      <div class="form-group">
+        <label for="token-modal-name">令牌名称</label>
+        <input id="token-modal-name" />
+      </div>
+      <div class="token-section-label">选择分组</div>
+      <div id="token-modal-groups" class="token-groups token-modal-groups"></div>
+      <div id="token-modal-error" class="modal-error"></div>
+
+      <div class="token-modal-create">
+        <button id="btn-token-modal-cancel" class="secondary">取消</button>
+        <button id="btn-token-modal-save">创建令牌</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="confirm-modal" class="modal-shell" aria-hidden="true">
+    <div class="modal-card confirm-modal-card">
+      <h3 class="modal-title" id="confirm-title">确认操作</h3>
+      <div id="confirm-message" class="confirm-message"></div>
+      <div class="modal-actions">
+        <button id="btn-confirm-cancel" class="secondary">取消</button>
+        <button id="btn-confirm-ok" class="bad">确定</button>
       </div>
     </div>
   </div>
@@ -664,6 +788,13 @@ const state = {
   collapsedGroups: {},
   sortField: 'manual',
   sortDir: 'desc',
+  tokenGroups: {},
+  tokens: {},
+  selectedTokenGroup: {},
+  tokenLoading: {},
+  tokenRevealing: {},
+  tokenModalKey: null,
+  confirmResolver: null,
 };
 
 const el = {
@@ -677,18 +808,28 @@ const el = {
   fBaseUrl: document.getElementById('f-base-url'),
   fUser: document.getElementById('f-user'),
   fSession: document.getElementById('f-session'),
-  fKeys: document.getElementById('f-keys'),
   fEnabled: document.getElementById('f-enabled'),
   addModal: document.getElementById('add-modal'),
   mName: document.getElementById('m-name'),
   mBaseUrl: document.getElementById('m-base-url'),
   mUser: document.getElementById('m-user'),
   mSession: document.getElementById('m-session'),
-  mKeys: document.getElementById('m-keys'),
   mEnabled: document.getElementById('m-enabled'),
   modalError: document.getElementById('modal-error'),
   btnModalSave: document.getElementById('btn-modal-save'),
   btnModalCancel: document.getElementById('btn-modal-cancel'),
+  tokenModal: document.getElementById('token-modal'),
+  tokenModalSub: document.getElementById('token-modal-sub'),
+  tokenModalName: document.getElementById('token-modal-name'),
+  tokenModalGroups: document.getElementById('token-modal-groups'),
+  tokenModalError: document.getElementById('token-modal-error'),
+  btnTokenModalSave: document.getElementById('btn-token-modal-save'),
+  btnTokenModalCancel: document.getElementById('btn-token-modal-cancel'),
+  confirmModal: document.getElementById('confirm-modal'),
+  confirmTitle: document.getElementById('confirm-title'),
+  confirmMessage: document.getElementById('confirm-message'),
+  btnConfirmOk: document.getElementById('btn-confirm-ok'),
+  btnConfirmCancel: document.getElementById('btn-confirm-cancel'),
   log: document.getElementById('log'),
   busy: document.getElementById('busy-line'),
   btnRefresh: document.getElementById('btn-refresh'),
@@ -727,12 +868,31 @@ function setBusyText(text = '') { el.busy.textContent = text; }
 function api(path, opts = {}) {
   return fetch(path, { headers: { 'Content-Type': 'application/json' }, ...opts }).then(async (r) => {
     const data = await r.json().catch(() => ({ ok: false, error: '响应不是有效JSON' }));
-    if (!r.ok || data.ok === false) throw new Error(data.error || `HTTP ${r.status}`);
+    if (!r.ok || data.ok === false) {
+      const err = new Error(data.error || `HTTP ${r.status}`);
+      err.data = data;
+      err.status = r.status;
+      throw err;
+    }
     return data;
   });
 }
 
 function quoteText(v) { return (v ?? '').toString(); }
+function isMaskedTokenKey(v) { return quoteText(v).includes('*'); }
+function formatTokenKey(v) {
+  const key = quoteText(v).trim();
+  if (!key || isMaskedTokenKey(key)) return '';
+  return key.startsWith('sk-') ? key : `sk-${key}`;
+}
+function escapeHtml(v) {
+  return quoteText(v)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
 function getQuotaPerUnit(sys) { const n = Number(sys?.quota_per_unit); return Number.isFinite(n) && n > 0 ? n : null; }
 function getMoneySymbol(sys) { const displayType = quoteText(sys?.quota_display_type).toUpperCase(); if (displayType === 'USD') return '$'; return quoteText(sys?.custom_currency_symbol) || '$'; }
 function quotaToMoney(rawQuota, sys) { const q = Number(rawQuota); const unit = getQuotaPerUnit(sys); if (!Number.isFinite(q) || !unit) return null; return q / unit; }
@@ -838,7 +998,7 @@ function showComboList(node) {
 }
 
 function setEditFormDisabled(disabled) {
-  for (const node of [el.fName, el.fBaseUrl, el.fUser, el.fSession, el.fKeys, el.fEnabled]) node.disabled = disabled;
+  for (const node of [el.fName, el.fBaseUrl, el.fUser, el.fSession, el.fEnabled]) node.disabled = disabled;
   const saveBtn = document.getElementById('btn-save');
   const cancelBtn = document.getElementById('btn-cancel');
   const deleteBtn = document.getElementById('btn-delete');
@@ -852,10 +1012,9 @@ function resetModalForm() {
   el.mBaseUrl.value = '';
   el.mUser.value = '';
   el.mSession.value = '';
-  el.mKeys.value = '';
   el.mEnabled.checked = true;
   el.modalError.textContent = '';
-  clearFieldStates([el.mName, el.mBaseUrl, el.mUser, el.mSession, el.mKeys]);
+  clearFieldStates([el.mName, el.mBaseUrl, el.mUser, el.mSession]);
 }
 
 function openAddModal() {
@@ -881,14 +1040,13 @@ function buildPayloadFromInputs(fields) {
     base_url: normalizeBaseUrlInput(fields.baseUrl.value),
     new_api_user: fields.user.value.trim(),
     session: fields.session.value.trim(),
-    api_keys: fields.keys.value,
     enabled: !!fields.enabled.checked,
   };
 }
 
 function validatePayload(payload, fields) {
   const errors = [];
-  clearFieldStates([fields.name, fields.baseUrl, fields.user, fields.session, fields.keys]);
+  clearFieldStates([fields.name, fields.baseUrl, fields.user, fields.session]);
   if (!payload.name) { errors.push('账号名不能为空'); setFieldInvalid(fields.name, true); }
   else if (!/^[A-Za-z0-9_\-.\u4e00-\u9fa5 ]{2,40}$/.test(payload.name)) { errors.push('账号名需为 2-40 个字符，只允许中文、英文、数字、空格、_ - .'); setFieldInvalid(fields.name, true); }
   if (!payload.new_api_user) { errors.push('new_api_user 不能为空'); setFieldInvalid(fields.user, true); }
@@ -897,9 +1055,6 @@ function validatePayload(payload, fields) {
   else if (!/^https?:\/\/.+/.test(payload.base_url)) { errors.push('域名地址(base_url)格式不正确'); setFieldInvalid(fields.baseUrl, true); }
   if (!payload.session) { errors.push('Session 不能为空'); setFieldInvalid(fields.session, true); }
   else if (/\s/.test(payload.session) || payload.session.length < 20) { errors.push('Session 不能包含空白字符，且长度不能过短'); setFieldInvalid(fields.session, true); }
-  const keyLines = payload.api_keys.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
-  const invalidKey = keyLines.find((line) => /\s/.test(line) || line.length < 10);
-  if (invalidKey) { errors.push('API Key 每行一条，且单条不能包含空格并至少 10 个字符'); setFieldInvalid(fields.keys, true); }
   return errors;
 }
 
@@ -910,9 +1065,8 @@ function fillForm(acc = null) {
     el.fBaseUrl.value = '';
     el.fUser.value = '';
     el.fSession.value = '';
-    el.fKeys.value = '';
     el.fEnabled.checked = true;
-    clearFieldStates([el.fName, el.fBaseUrl, el.fUser, el.fSession, el.fKeys]);
+    clearFieldStates([el.fName, el.fBaseUrl, el.fUser, el.fSession]);
     setEditFormDisabled(true);
     el.panelTitle.textContent = '账号编辑';
     return;
@@ -922,9 +1076,8 @@ function fillForm(acc = null) {
   el.fBaseUrl.value = acc.base_url || '';
   el.fUser.value = acc.new_api_user || '';
   el.fSession.value = acc.session || '';
-  el.fKeys.value = (acc.api_keys || []).join('\n');
   el.fEnabled.checked = !!acc.enabled;
-  clearFieldStates([el.fName, el.fBaseUrl, el.fUser, el.fSession, el.fKeys]);
+  clearFieldStates([el.fName, el.fBaseUrl, el.fUser, el.fSession]);
   setEditFormDisabled(false);
   el.panelTitle.textContent = `编辑账号：${acc.name}`;
 }
@@ -1084,7 +1237,6 @@ function renderTable() {
         <td class="small status-short" title="${(state.statusResults[key]?.api_error || '').replace(/"/g, '&quot;')}">${rowSum.statusText}</td>
         <td>
           <div class="row-actions">
-            <button data-action="copy" data-key="${key}" class="secondary" title="复制APIKey" ${running ? 'disabled' : ''}>复制</button>
             <button data-action="checkin" data-key="${key}" class="${activeAction === 'checkin' ? 'busy-button' : ''}" ${running ? 'disabled' : ''}>${checkinLabel}</button>
             <button data-action="status" data-key="${key}" class="secondary ${activeAction === 'status' ? 'busy-button' : ''}" ${running ? 'disabled' : ''}>${statusLabel}</button>
             <button data-action="delete" data-key="${key}" class="bad ${activeAction === 'delete' ? 'busy-button' : ''}" ${running ? 'disabled' : ''}>${deleteLabel}</button>
@@ -1100,7 +1252,6 @@ function renderTable() {
       e.stopPropagation();
       const action = btn.dataset.action;
       const key = btn.dataset.key;
-      if (action === 'copy') return copyApiKeys(key);
       if (action === 'checkin') await withAccountBusy(key, 'checkin', () => checkinOne(key));
       if (action === 'status') await withAccountBusy(key, 'status', () => statusOne(key));
       if (action === 'delete') await withAccountBusy(key, 'delete', () => deleteOne(key));
@@ -1133,6 +1284,330 @@ function renderTable() {
 
 function metricTone(value) { const n = Number(value); if (!Number.isFinite(n)) return 'metric-neutral'; if (n > 0) return 'metric-positive'; if (n < 0) return 'metric-negative'; return 'metric-neutral'; }
 function flashDetail() { el.detailStatus.classList.remove('flash'); void el.detailStatus.offsetWidth; el.detailStatus.classList.add('flash'); }
+
+function tokenBusyText(key) {
+  const busy = state.tokenLoading[key];
+  if (busy === 'create') return '创建中...';
+  if (busy === 'delete') return '删除中...';
+  if (busy) return '加载中...';
+  return '';
+}
+
+function ensureSelectedTokenGroup(key) {
+  const groups = state.tokenGroups[key] || [];
+  if (!state.selectedTokenGroup[key] && groups.length) state.selectedTokenGroup[key] = groups[0].id;
+}
+
+function tokenGroupsReady(key) {
+  const groups = state.tokenGroups[key];
+  const busy = state.tokenLoading[key];
+  const selectedGroup = state.selectedTokenGroup[key] || '';
+  return Array.isArray(groups)
+    && groups.some((group) => group.id === selectedGroup)
+    && !['groups', 'load', 'create'].includes(busy);
+}
+
+function tokenRevealMap(key) {
+  if (!state.tokenRevealing[key]) state.tokenRevealing[key] = {};
+  return state.tokenRevealing[key];
+}
+
+function tokenNeedsReveal(token) {
+  return !!(token && token.id && !formatTokenKey(token.key));
+}
+
+function tokenDisplayKey(key, token) {
+  const fullKey = formatTokenKey(token.key);
+  if (fullKey) return fullKey;
+  if (tokenRevealMap(key)[token.id]) return '正在获取完整令牌...';
+  return token.id ? '完整令牌未展开，点击复制会重新获取。' : '接口未返回 key。';
+}
+
+function renderTokenPanel(acc) {
+  const panel = document.getElementById('token-panel');
+  if (!panel || !acc) return;
+  const key = accountKey(acc);
+  const tokens = state.tokens[key] || [];
+  const busy = tokenBusyText(key);
+  const tokenBusy = !!state.tokenLoading[key];
+  const tokenHtml = tokens.length ? tokens.map((token) => `
+    <div class="token-row">
+      <div class="token-meta">
+        <div class="token-name">${escapeHtml(token.name || `令牌 ${token.id || ''}`)}</div>
+        <div class="token-key mono">${escapeHtml(tokenDisplayKey(key, token))}</div>
+        <div class="token-group">分组：${escapeHtml(token.group || '-')}</div>
+      </div>
+      <div class="token-row-actions">
+        <button type="button" class="secondary" data-token-id="${escapeHtml(token.id ?? '')}" data-token-copy="${escapeHtml(formatTokenKey(token.key))}" ${token.id ? '' : 'disabled'}>复制</button>
+        <button type="button" class="bad" data-token-delete="${escapeHtml(token.id ?? '')}" ${token.id ? '' : 'disabled'}>删除</button>
+      </div>
+    </div>
+  `).join('') : `<div class="token-empty">${busy || '暂无令牌。'}</div>`;
+  panel.innerHTML = `
+    <div class="token-head">
+      <div class="token-title">令牌管理</div>
+      <div class="token-actions">
+        <button type="button" id="btn-token-open" ${tokenBusy ? 'disabled' : ''}>添加令牌</button>
+        <button type="button" class="secondary" id="btn-token-refresh">${busy || '刷新令牌'}</button>
+      </div>
+    </div>
+    <div class="token-section-label">已创建令牌</div>
+    <div class="token-list">${tokenHtml}</div>
+  `;
+  const openBtn = panel.querySelector('#btn-token-open');
+  if (openBtn) openBtn.addEventListener('click', () => openTokenModal(key).catch(handleTokenError(key)));
+  const refreshBtn = panel.querySelector('#btn-token-refresh');
+  if (refreshBtn) refreshBtn.addEventListener('click', () => loadTokenData(key, true).catch(handleTokenError(key)));
+  for (const btn of panel.querySelectorAll('[data-token-copy]')) {
+    btn.addEventListener('click', () => copyTokenForAccount(key, btn.dataset.tokenId, btn.dataset.tokenCopy || '').catch(handleTokenError(key)));
+  }
+  for (const btn of panel.querySelectorAll('[data-token-delete]')) {
+    btn.addEventListener('click', () => deleteTokenForAccount(key, btn.dataset.tokenDelete).catch(handleTokenError(key)));
+  }
+}
+
+function handleTokenError(key) {
+  return (e) => {
+    delete state.tokenLoading[key];
+    renderDetail();
+    renderTokenModalGroups(key);
+    log(`${accountLabel(key)} 令牌操作失败：${e.message || e}`, 'bad2');
+    notify('bad2', '令牌操作失败', `${accountLabel(key)}：${e.message || e}`);
+  };
+}
+
+async function revealTokenKey(key, tokenId) {
+  if (!tokenId) return '';
+  const revealMap = tokenRevealMap(key);
+  revealMap[tokenId] = true;
+  renderDetail();
+  try {
+    const data = await api(`/api/accounts/${encodeURIComponent(key)}/tokens/${encodeURIComponent(tokenId)}/key`, { method: 'POST' });
+    const fullKey = formatTokenKey(data.key || '');
+    if (fullKey) {
+      state.tokens[key] = (state.tokens[key] || []).map((token) => (
+        String(token.id) === String(tokenId) ? { ...token, key: fullKey } : token
+      ));
+    }
+    return fullKey;
+  } finally {
+    delete revealMap[tokenId];
+    renderDetail();
+  }
+}
+
+async function revealTokenKeys(key) {
+  const tokens = state.tokens[key] || [];
+  const pending = tokens.filter(tokenNeedsReveal);
+  const batchSize = 3;
+  for (let i = 0; i < pending.length; i += batchSize) {
+    await Promise.all(pending.slice(i, i + batchSize).map((token) => revealTokenKey(key, token.id).catch(() => '')));
+  }
+}
+
+function revealTokenKeysInBackground(key) {
+  const tokens = state.tokens[key] || [];
+  const pending = tokens.filter(tokenNeedsReveal);
+  if (!pending.length) return;
+  revealTokenKeys(key).then(() => renderDetail()).catch(handleTokenError(key));
+}
+
+function tokenApiPath(key, path, force = false) {
+  const suffix = force ? '?force=1' : '';
+  return `/api/accounts/${encodeURIComponent(key)}/${path}${suffix}`;
+}
+
+async function loadTokenGroups(key, force = false) {
+  if (!force && state.tokenGroups[key]) return;
+  state.tokenLoading[key] = 'groups';
+  renderTokenModalGroups(key);
+  const groupData = await api(tokenApiPath(key, 'token-groups', force));
+  state.tokenGroups[key] = Array.isArray(groupData.groups) ? groupData.groups : [];
+  ensureSelectedTokenGroup(key);
+  delete state.tokenLoading[key];
+  renderTokenModalGroups(key);
+}
+
+async function loadTokenData(key, force = false, { reveal = true, waitForReveal = false } = {}) {
+  if (!force && state.tokenGroups[key] && state.tokens[key]) return;
+  state.tokenLoading[key] = 'load';
+  renderDetail();
+  const [groupData, tokenData] = await Promise.all([
+    api(tokenApiPath(key, 'token-groups', force)),
+    api(tokenApiPath(key, 'tokens', force)),
+  ]);
+  state.tokenGroups[key] = Array.isArray(groupData.groups) ? groupData.groups : [];
+  state.tokens[key] = Array.isArray(tokenData.tokens)
+    ? tokenData.tokens.map((token) => ({ ...token, key: formatTokenKey(token.key) }))
+    : [];
+  ensureSelectedTokenGroup(key);
+  delete state.tokenLoading[key];
+  renderDetail();
+  renderTokenModalGroups(key);
+  if (reveal) {
+    if (waitForReveal) await revealTokenKeys(key);
+    else revealTokenKeysInBackground(key);
+  }
+}
+
+function renderTokenModalGroups(key) {
+  if (!el.tokenModalGroups) return;
+  const groups = state.tokenGroups[key] || [];
+  const selectedGroup = state.selectedTokenGroup[key] || '';
+  const busy = tokenBusyText(key);
+  const loadingGroups = ['groups', 'load'].includes(state.tokenLoading[key]);
+  el.btnTokenModalSave.disabled = !tokenGroupsReady(key);
+  el.btnTokenModalSave.textContent = loadingGroups ? '加载分组中' : '创建令牌';
+  el.tokenModalGroups.innerHTML = groups.length ? groups.map((group) => `
+    <button type="button" class="token-group-item ${group.id === selectedGroup ? 'active' : ''}" data-token-modal-group="${escapeHtml(group.id)}">
+      <div class="token-group-id">${escapeHtml(group.id)}</div>
+      <div class="token-group-desc">${escapeHtml(group.desc || '无描述')}</div>
+      <div class="token-group-ratio">倍率：${escapeHtml(group.ratio ?? '-')}</div>
+    </button>
+  `).join('') : `<div class="token-empty">${busy || '暂无分组，点击刷新令牌重试。'}</div>`;
+  for (const btn of el.tokenModalGroups.querySelectorAll('[data-token-modal-group]')) {
+    btn.addEventListener('click', () => {
+      state.selectedTokenGroup[key] = btn.dataset.tokenModalGroup || '';
+      renderTokenModalGroups(key);
+    });
+  }
+}
+
+async function openTokenModal(key) {
+  state.tokenModalKey = key;
+  el.tokenModalName.value = '';
+  el.tokenModalError.textContent = '';
+  el.tokenModalSub.textContent = `${accountLabel(key)}：选择分组并填写令牌名称。`;
+  el.tokenModal.classList.add('open');
+  el.tokenModal.setAttribute('aria-hidden', 'false');
+  await loadTokenGroups(key);
+  renderTokenModalGroups(key);
+  window.setTimeout(() => el.tokenModalName.focus(), 30);
+}
+
+function closeTokenModal() {
+  state.tokenModalKey = null;
+  el.tokenModal.classList.remove('open');
+  el.tokenModal.setAttribute('aria-hidden', 'true');
+  el.tokenModalError.textContent = '';
+}
+
+function closeConfirmDialog(result) {
+  if (!el.confirmModal.classList.contains('open')) return;
+  el.confirmModal.classList.remove('open');
+  el.confirmModal.setAttribute('aria-hidden', 'true');
+  const resolver = state.confirmResolver;
+  state.confirmResolver = null;
+  if (resolver) resolver(!!result);
+}
+
+function showConfirmDialog({ title = '确认操作', message = '', okText = '确定', cancelText = '取消', danger = true } = {}) {
+  if (state.confirmResolver) closeConfirmDialog(false);
+  return new Promise((resolve) => {
+    state.confirmResolver = resolve;
+    el.confirmTitle.textContent = title;
+    el.confirmMessage.textContent = message;
+    el.btnConfirmOk.textContent = okText;
+    el.btnConfirmCancel.textContent = cancelText;
+    el.btnConfirmOk.classList.toggle('bad', !!danger);
+    el.btnConfirmOk.classList.toggle('warn', !danger);
+    el.confirmModal.classList.add('open');
+    el.confirmModal.setAttribute('aria-hidden', 'false');
+    window.setTimeout(() => el.btnConfirmCancel.focus(), 30);
+  });
+}
+
+async function createTokenForAccount(key, name) {
+  const group = state.selectedTokenGroup[key] || '';
+  if (!name) { notify('warn2', '请输入令牌名称', '创建令牌前需要填写名称。'); return; }
+  if (!group) { notify('warn2', '请选择分组', '创建令牌前需要先选择一个分组。'); return; }
+  state.tokenLoading[key] = 'create';
+  closeTokenModal();
+  renderDetail();
+  renderTokenModalGroups(key);
+  notify('warn2', '正在创建令牌', `${name} 正在创建到分组 ${group}。`);
+  try {
+    const data = await api(`/api/accounts/${encodeURIComponent(key)}/tokens`, {
+      method: 'POST',
+      body: JSON.stringify({ name, group }),
+    });
+    if (data.token && data.token.key) {
+      state.tokens[key] = [{ ...data.token, key: formatTokenKey(data.token.key) }, ...(state.tokens[key] || [])];
+    }
+    log(`${accountLabel(key)} 已创建令牌：${name} / ${group}`, 'ok');
+    notify('ok', '令牌已创建', `${name} 已创建到分组 ${group}。`);
+    loadTokenData(key, true).catch(handleTokenError(key));
+  } catch (e) {
+    if (e.data?.groups_refreshed && Array.isArray(e.data.groups)) {
+      state.tokenGroups[key] = e.data.groups;
+      if (!state.tokenGroups[key].some((item) => item.id === state.selectedTokenGroup[key])) {
+        state.selectedTokenGroup[key] = '';
+      }
+      ensureSelectedTokenGroup(key);
+      state.tokenModalKey = key;
+      el.tokenModalName.value = name;
+      el.tokenModalSub.textContent = `${accountLabel(key)}：分组已刷新，请重新选择后创建。`;
+      el.tokenModal.classList.add('open');
+      el.tokenModal.setAttribute('aria-hidden', 'false');
+      el.tokenModalError.textContent = '原分组不可用，已刷新分组列表，请重新选择。';
+      renderTokenModalGroups(key);
+      notify('warn2', '分组已刷新', '原分组不可用，请重新选择分组后创建。');
+    }
+    log(`${accountLabel(key)} 创建令牌失败：${e.message || e}`, 'bad2');
+    notify('bad2', '令牌创建失败', `${name}：${e.message || e}`);
+  } finally {
+    if (state.tokenLoading[key] === 'create') delete state.tokenLoading[key];
+    renderDetail();
+    renderTokenModalGroups(key);
+  }
+}
+
+async function saveTokenModal() {
+  const key = state.tokenModalKey;
+  if (!key) return;
+  if (!tokenGroupsReady(key)) {
+    el.tokenModalError.textContent = state.tokenLoading[key] ? '请等待分组加载完成后再创建' : '请先选择一个可用分组';
+    return;
+  }
+  const name = String(el.tokenModalName.value || '').trim();
+  if (!name) {
+    el.tokenModalError.textContent = '令牌名称不能为空';
+    setFieldInvalid(el.tokenModalName, true);
+    return;
+  }
+  el.tokenModalError.textContent = '';
+  setFieldInvalid(el.tokenModalName, false);
+  await createTokenForAccount(key, name);
+}
+
+async function copyTokenForAccount(key, tokenId, fallbackKey = '') {
+  const fullKey = tokenId ? await revealTokenKey(key, tokenId) : '';
+  renderDetail();
+  const copyValue = formatTokenKey(fullKey || fallbackKey);
+  if (!copyValue) {
+    notify('warn2', '完整令牌未获取', '接口暂时没有返回完整令牌，请刷新令牌后重试。');
+    return;
+  }
+  await copyText(copyValue, '令牌已复制');
+}
+
+async function deleteTokenForAccount(key, tokenId) {
+  if (!tokenId) return;
+  const confirmed = await showConfirmDialog({
+    title: '删除令牌',
+    message: `确定删除令牌 #${tokenId} 吗？`,
+    okText: '删除',
+  });
+  if (!confirmed) return;
+  state.tokenLoading[key] = 'delete';
+  renderDetail();
+  await api(`/api/accounts/${encodeURIComponent(key)}/tokens/${encodeURIComponent(tokenId)}`, { method: 'DELETE' });
+  state.tokens[key] = (state.tokens[key] || []).filter((token) => String(token.id) !== String(tokenId));
+  delete state.tokenLoading[key];
+  renderDetail();
+  log(`${accountLabel(key)} 已删除令牌 #${tokenId}`, 'ok');
+  notify('ok', '令牌已删除', `令牌 #${tokenId} 已删除。`);
+}
 
 function renderDetail() {
   if (!state.selected) {
@@ -1186,9 +1661,11 @@ function renderDetail() {
     </div>
     <div class="small" style="margin-top:12px;">上次检测时间：${prevTime}${sourceTip}</div>
     ${sr && !sr.session_valid ? `<div class="small bad2" style="margin-top:8px; word-break:break-word;">异常信息：${sr.api_error || '接口返回异常'}<\/div>` : ''}
+    <div id="token-panel" class="token-panel"></div>
   `;
   flashDetail();
   fillForm(acc);
+  renderTokenPanel(acc);
 }
 
 function selectAccount(key) {
@@ -1196,6 +1673,10 @@ function selectAccount(key) {
   if (state.selected) fillForm(state.selected);
   renderTable();
   renderDetail();
+  if (state.selected) loadTokenData(key).catch((e) => {
+    log(`${accountLabel(key)} 令牌加载失败：${e.message || e}`, 'bad2');
+    notify('bad2', '令牌加载失败', `${accountLabel(key)}：${e.message || e}`);
+  });
 }
 
 async function refreshAccounts() {
@@ -1257,19 +1738,16 @@ async function withAccountBusy(key, action, fn) {
   }
 }
 
-async function copyApiKeys(key) {
-  const acc = findAccountByKey(key);
-  const label = accountLabel(acc || key);
-  if (!acc) return notify('bad2', '未找到账号', `${label} 不存在于当前列表中。`);
-  const keys = Array.isArray(acc.api_keys) ? acc.api_keys.filter(Boolean) : [];
-  if (!keys.length) return notify('warn2', '没有可复制的 API Key', `${label} 当前没有保存可复制的 Key。`);
+async function copyText(text, title = '复制成功') {
+  const value = String(text || '');
+  if (!value) return notify('warn2', '没有可复制内容', '当前项目没有可复制的文本。');
   try {
-    await navigator.clipboard.writeText(keys.join('\n'));
-    log(`${label} API Key 已复制（${keys.length} 条）`, 'ok');
-    notify('ok', '复制成功', `${label} 的 API Key 已复制到剪贴板，共 ${keys.length} 条。`);
+    await navigator.clipboard.writeText(value);
+    log(title, 'ok');
+    notify('ok', title, '内容已复制到剪贴板。');
   } catch (e) {
-    log(`${label} 复制失败：${e.message || e}`, 'bad2');
-    notify('bad2', '复制失败', `${label} 的 API Key 复制失败：${e.message || e}`);
+    log(`复制失败：${e.message || e}`, 'bad2');
+    notify('bad2', '复制失败', e.message || String(e));
   }
 }
 
@@ -1437,9 +1915,9 @@ async function applyTopSort() {
 async function saveForm() {
   if (!state.editingAccountKey) { notify('warn2', '未选择账号', '请先点击左侧账号行，再编辑保存。'); return; }
   const key = state.editingAccountKey;
-  const payload = buildPayloadFromInputs({ name: el.fName, baseUrl: el.fBaseUrl, user: el.fUser, session: el.fSession, keys: el.fKeys, enabled: el.fEnabled });
+  const payload = buildPayloadFromInputs({ name: el.fName, baseUrl: el.fBaseUrl, user: el.fUser, session: el.fSession, enabled: el.fEnabled });
   el.fBaseUrl.value = payload.base_url;
-  const errors = validatePayload(payload, { name: el.fName, baseUrl: el.fBaseUrl, user: el.fUser, session: el.fSession, keys: el.fKeys, enabled: el.fEnabled });
+  const errors = validatePayload(payload, { name: el.fName, baseUrl: el.fBaseUrl, user: el.fUser, session: el.fSession, enabled: el.fEnabled });
   if (errors.length) { log(`保存失败：${errors[0]}`, 'bad2'); notify('bad2', '保存失败', errors[0]); return; }
   await api(`/api/accounts/${encodeURIComponent(key)}`, { method: 'PUT', body: JSON.stringify(payload) });
   log(`已更新账号 #${displayIndexByKey(key)}：${payload.name}`, 'ok');
@@ -1449,9 +1927,9 @@ async function saveForm() {
 }
 
 async function saveNewAccount() {
-  const payload = buildPayloadFromInputs({ name: el.mName, baseUrl: el.mBaseUrl, user: el.mUser, session: el.mSession, keys: el.mKeys, enabled: el.mEnabled });
+  const payload = buildPayloadFromInputs({ name: el.mName, baseUrl: el.mBaseUrl, user: el.mUser, session: el.mSession, enabled: el.mEnabled });
   el.mBaseUrl.value = payload.base_url;
-  const errors = validatePayload(payload, { name: el.mName, baseUrl: el.mBaseUrl, user: el.mUser, session: el.mSession, keys: el.mKeys, enabled: el.mEnabled });
+  const errors = validatePayload(payload, { name: el.mName, baseUrl: el.mBaseUrl, user: el.mUser, session: el.mSession, enabled: el.mEnabled });
   if (errors.length) { el.modalError.textContent = errors[0]; notify('bad2', '创建失败', errors[0]); return; }
   el.modalError.textContent = '';
   const data = await api('/api/accounts', { method: 'POST', body: JSON.stringify(payload) });
@@ -1465,7 +1943,12 @@ async function saveNewAccount() {
 
 async function deleteOne(key) {
   const label = accountLabel(key);
-  if (!confirm(`确定删除账号 ${label} 吗？`)) return;
+  const confirmed = await showConfirmDialog({
+    title: '删除账号',
+    message: `确定删除账号 ${label} 吗？`,
+    okText: '删除',
+  });
+  if (!confirmed) return;
   await api(`/api/accounts/${encodeURIComponent(key)}`, { method: 'DELETE' });
   delete state.checkinResults[key]; delete state.statusResults[key]; delete state.signinStatus[key];
   if (state.selected && accountKey(state.selected) === String(key)) { state.selected = null; fillForm(null); }
@@ -1511,13 +1994,32 @@ el.btnModalSave.addEventListener('click', () => withGlobalBusy('创建账号', e
   log(e.message || String(e), 'bad2');
 }));
 el.addModal.addEventListener('click', (e) => { if (e.target === el.addModal) closeAddModal(); });
-window.addEventListener('keydown', (e) => { if (e.key === 'Escape' && el.addModal.classList.contains('open')) closeAddModal(); });
-for (const node of [el.fName, el.fBaseUrl, el.fUser, el.fSession, el.fKeys, el.mName, el.mBaseUrl, el.mUser, el.mSession, el.mKeys]) {
+el.btnTokenModalCancel.addEventListener('click', () => closeTokenModal());
+el.btnTokenModalSave.addEventListener('click', () => saveTokenModal().catch((e) => {
+  el.tokenModalError.textContent = e.message || String(e);
+  notify('bad2', '令牌创建失败', e.message || String(e));
+  log(e.message || String(e), 'bad2');
+}));
+el.tokenModal.addEventListener('click', (e) => { if (e.target === el.tokenModal) closeTokenModal(); });
+el.btnConfirmCancel.addEventListener('click', () => closeConfirmDialog(false));
+el.btnConfirmOk.addEventListener('click', () => closeConfirmDialog(true));
+el.confirmModal.addEventListener('click', (e) => { if (e.target === el.confirmModal) closeConfirmDialog(false); });
+window.addEventListener('keydown', (e) => {
+  if (e.key !== 'Escape') return;
+  if (el.confirmModal.classList.contains('open')) closeConfirmDialog(false);
+  if (el.addModal.classList.contains('open')) closeAddModal();
+  if (el.tokenModal.classList.contains('open')) closeTokenModal();
+});
+for (const node of [el.fName, el.fBaseUrl, el.fUser, el.fSession, el.mName, el.mBaseUrl, el.mUser, el.mSession]) {
   node.addEventListener('input', () => {
     setFieldInvalid(node, false);
-    if ([el.mName, el.mBaseUrl, el.mUser, el.mSession, el.mKeys].includes(node)) el.modalError.textContent = '';
+    if ([el.mName, el.mBaseUrl, el.mUser, el.mSession].includes(node)) el.modalError.textContent = '';
   });
 }
+el.tokenModalName.addEventListener('input', () => {
+  setFieldInvalid(el.tokenModalName, false);
+  el.tokenModalError.textContent = '';
+});
 for (const toggle of document.querySelectorAll('.combo-toggle')) {
   toggle.addEventListener('mousedown', (e) => {
     e.preventDefault();

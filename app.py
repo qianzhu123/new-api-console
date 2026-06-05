@@ -21,11 +21,14 @@ CONFIG_PATH = DATA_DIR / "session.json"
 HISTORY_PATH = DATA_DIR / "quota_history.json"
 SIGNIN_PATH = DATA_DIR / "signin_status.json"
 STATUS_CACHE_PATH = DATA_DIR / "status_cache.json"
+TOKEN_CACHE_PATH = DATA_DIR / "token_cache.json"
 DEFAULT_BASE_URL = "https://www.new-api.com"
 BASE_URL_ENV_KEY = "NEW_API_BASE_URL"
 CHECKIN_PATH = "/api/user/checkin"
 SELF_PATH = "/api/user/self"
 STATUS_PATH = "/api/status"
+TOKEN_GROUPS_PATH = "/api/user/self/groups"
+TOKEN_PATH = "/api/token/"
 TIMEOUT_SECONDS = 20
 def parse_positive_int_env(name: str, default: int) -> int:
     try:
@@ -595,6 +598,259 @@ def mask_api_key(key: str) -> str:
     if len(key) <= 8:
         return "*" * len(key)
     return f"{key[:4]}...{key[-4:]}"
+
+
+def get_account_by_index(account_index: int) -> dict[str, Any] | None:
+    cfg = load_config()
+    accounts = cfg.get("accounts", [])
+    idx = get_account_index(accounts, account_index)
+    if idx < 0:
+        return None
+    return accounts[idx]
+
+
+def token_cache_key(account: dict[str, Any]) -> str:
+    base_url = normalize_base_url(str(account.get("base_url") or get_base_url()))
+    user_id = str(account.get("new_api_user") or "").strip()
+    return f"{base_url}|{user_id}"
+
+
+def load_token_cache() -> dict[str, Any]:
+    ensure_data_layout()
+    if not TOKEN_CACHE_PATH.exists():
+        return {"accounts": {}}
+    try:
+        with TOKEN_CACHE_PATH.open("r", encoding="utf-8") as f:
+            data = json.load(f)
+    except Exception:
+        return {"accounts": {}}
+    if not isinstance(data, dict):
+        return {"accounts": {}}
+    accounts = data.get("accounts")
+    if not isinstance(accounts, dict):
+        data["accounts"] = {}
+    return data
+
+
+def save_token_cache(data: dict[str, Any]) -> None:
+    with config_lock:
+        accounts = data.get("accounts")
+        if not isinstance(accounts, dict):
+            data["accounts"] = {}
+        atomic_save_json(TOKEN_CACHE_PATH, data)
+
+
+def token_cache_entry(account: dict[str, Any]) -> dict[str, Any]:
+    store = load_token_cache()
+    entry = store.get("accounts", {}).get(token_cache_key(account))
+    return entry if isinstance(entry, dict) else {}
+
+
+def cached_token_groups(account: dict[str, Any]) -> list[dict[str, Any]]:
+    groups = token_cache_entry(account).get("groups")
+    return groups if isinstance(groups, list) else []
+
+
+def cached_tokens(account: dict[str, Any]) -> list[dict[str, Any]]:
+    tokens = token_cache_entry(account).get("tokens")
+    return tokens if isinstance(tokens, list) else []
+
+
+def has_cached_tokens(account: dict[str, Any]) -> bool:
+    return isinstance(token_cache_entry(account).get("tokens"), list)
+
+
+def sanitize_token_for_cache(token: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "id": token.get("id"),
+        "name": str(token.get("name") or ""),
+        "key": "",
+        "group": str(token.get("group") or ""),
+    }
+
+
+def update_token_cache(
+    account: dict[str, Any],
+    *,
+    groups: list[dict[str, Any]] | None = None,
+    tokens: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    with config_lock:
+        store = load_token_cache()
+        accounts = store.setdefault("accounts", {})
+        if not isinstance(accounts, dict):
+            accounts = {}
+            store["accounts"] = accounts
+        key = token_cache_key(account)
+        entry = accounts.get(key)
+        if not isinstance(entry, dict):
+            entry = {}
+            accounts[key] = entry
+        if groups is not None:
+            entry["groups"] = groups
+            entry["groups_updated_at"] = now_ts()
+        if tokens is not None:
+            entry["tokens"] = [sanitize_token_for_cache(token) for token in tokens]
+            entry["tokens_updated_at"] = now_ts()
+        entry["updated_at"] = now_ts()
+        atomic_save_json(TOKEN_CACHE_PATH, store)
+        return entry
+
+
+def cache_add_token(account: dict[str, Any], token: dict[str, Any]) -> None:
+    tokens = cached_tokens(account)
+    token_id = token.get("id")
+    cached = sanitize_token_for_cache(token)
+    if token_id is not None:
+        tokens = [item for item in tokens if str(item.get("id")) != str(token_id)]
+    update_token_cache(account, tokens=[cached, *tokens])
+
+
+def cache_delete_token(account: dict[str, Any], token_id: int) -> None:
+    tokens = cached_tokens(account)
+    update_token_cache(account, tokens=[item for item in tokens if str(item.get("id")) != str(token_id)])
+
+
+def build_token_headers(account: dict[str, Any]) -> tuple[str, str, dict[str, str], dict[str, str]]:
+    session_value = str(account.get("session") or "").strip()
+    user_id = str(account.get("new_api_user") or "").strip()
+    base_url = normalize_base_url(str(account.get("base_url") or get_base_url()))
+    headers = build_headers(
+        user_id,
+        referer=f"{base_url}/console/token",
+        extra_headers={
+            "dnt": "1",
+            "pragma": "no-cache",
+            "cache-control": "no-store",
+        },
+        base_url=base_url,
+    )
+    return base_url, session_value, headers, {"session": session_value}
+
+
+def parse_api_payload(resp: requests.Response) -> dict[str, Any]:
+    try:
+        payload = resp.json()
+    except ValueError:
+        payload = {"raw": resp.text[:500]}
+    if not isinstance(payload, dict):
+        return {"success": False, "message": "response is not an object", "payload": payload}
+    return payload
+
+
+def api_payload_error(payload: dict[str, Any], resp: requests.Response) -> str | None:
+    if resp.ok and payload.get("success") is not False:
+        return None
+    message = str(payload.get("message") or payload.get("error") or "").strip()
+    return message or f"http {resp.status_code}"
+
+
+def normalize_token_groups(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    data = payload.get("data")
+    if not isinstance(data, dict):
+        return []
+    groups: list[dict[str, Any]] = []
+    for group_id, item in data.items():
+        if not isinstance(item, dict):
+            continue
+        groups.append({
+            "id": str(group_id),
+            "desc": str(item.get("desc") or ""),
+            "ratio": item.get("ratio"),
+        })
+    return groups
+
+
+def token_records_from_payload(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    data = payload.get("data")
+    if isinstance(data, list):
+        return [item for item in data if isinstance(item, dict)]
+    if isinstance(data, dict):
+        for key in ("items", "tokens", "rows", "data"):
+            value = data.get(key)
+            if isinstance(value, list):
+                return [item for item in value if isinstance(item, dict)]
+    return []
+
+
+def normalize_tokens(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    tokens = []
+    for item in token_records_from_payload(payload):
+        token_key = item.get("key") or item.get("token") or item.get("value")
+        tokens.append({
+            "id": item.get("id"),
+            "name": str(item.get("name") or ""),
+            "key": format_token_key(token_key),
+            "group": str(item.get("group") or ""),
+        })
+    return tokens
+
+
+def normalize_created_token(payload: dict[str, Any], name: str, group: str) -> dict[str, Any]:
+    data = payload.get("data") if isinstance(payload.get("data"), dict) else {}
+    token_key = data.get("key") or data.get("token") or data.get("value") or payload.get("key") or payload.get("token")
+    return {
+        "id": data.get("id") or payload.get("id"),
+        "name": str(data.get("name") or name),
+        "key": format_token_key(token_key),
+        "group": str(data.get("group") or group),
+    }
+
+
+def is_masked_token_key(raw_key: Any) -> bool:
+    return "*" in str(raw_key or "")
+
+
+def format_token_key(raw_key: Any) -> str:
+    token_key = str(raw_key or "").strip()
+    if not token_key or is_masked_token_key(token_key):
+        return ""
+    return token_key if token_key.startswith("sk-") else f"sk-{token_key}"
+
+
+def key_from_token_payload(payload: dict[str, Any]) -> str:
+    data = payload.get("data") if isinstance(payload.get("data"), dict) else {}
+    token_key = data.get("key") or data.get("token") or data.get("value") or payload.get("key") or payload.get("token")
+    return format_token_key(token_key)
+
+
+def is_truthy_query_arg(name: str) -> bool:
+    return str(request.args.get(name) or "").lower() in {"1", "true", "yes", "on"}
+
+
+def token_group_error(message: str) -> bool:
+    text = str(message or "").lower()
+    return any(keyword in text for keyword in ("group", "分组", "模型组", "渠道组"))
+
+
+def fetch_remote_token_groups(account: dict[str, Any]) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    base_url, session_value, headers, cookies = build_token_headers(account)
+    if not session_value:
+        raise ValueError("missing session")
+    url = base_url.rstrip("/") + "/" + TOKEN_GROUPS_PATH.lstrip("/")
+    resp = requests.get(url, cookies=cookies, headers=headers, timeout=TIMEOUT_SECONDS)
+    payload = parse_api_payload(resp)
+    error = api_payload_error(payload, resp)
+    if error:
+        raise RuntimeError(error)
+    groups = normalize_token_groups(payload)
+    update_token_cache(account, groups=groups)
+    return groups, payload
+
+
+def fetch_remote_tokens(account: dict[str, Any]) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    base_url, session_value, headers, cookies = build_token_headers(account)
+    if not session_value:
+        raise ValueError("missing session")
+    url = base_url.rstrip("/") + "/" + TOKEN_PATH.lstrip("/") + "?p=1&size=50"
+    resp = requests.get(url, cookies=cookies, headers=headers, timeout=TIMEOUT_SECONDS)
+    payload = parse_api_payload(resp)
+    error = api_payload_error(payload, resp)
+    if error:
+        raise RuntimeError(error)
+    tokens = normalize_tokens(payload)
+    update_token_cache(account, tokens=tokens)
+    return tokens, payload
 
 
 def fetch_public_status(base_url: str | None = None) -> dict[str, Any]:
@@ -1362,6 +1618,142 @@ def status_all():
     results = run_batch_parallel(accounts, check_account_status)
     default_base_url = normalize_base_url(str(get_base_url()))
     return jsonify({"ok": True, "results": results, "system_status": system_status_cache.get(default_base_url) or fetch_public_status(base_url=default_base_url)})
+
+
+@app.route("/api/accounts/<int:account_index>/token-groups", methods=["GET"])
+def token_groups(account_index: int):
+    account = get_account_by_index(account_index)
+    if account is None:
+        return jsonify({"ok": False, "error": "account not found"}), 404
+    force = is_truthy_query_arg("force")
+    cached_groups = cached_token_groups(account)
+    if cached_groups and not force:
+        return jsonify({"ok": True, "groups": cached_groups, "source": "cache"})
+    try:
+        groups, payload = fetch_remote_token_groups(account)
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    except requests.RequestException as exc:
+        return jsonify({"ok": False, "error": f"network error: {exc}"}), 502
+    except RuntimeError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 502
+    return jsonify({"ok": True, "groups": groups, "source": "remote", "payload": payload})
+
+
+@app.route("/api/accounts/<int:account_index>/tokens", methods=["GET"])
+def list_tokens(account_index: int):
+    account = get_account_by_index(account_index)
+    if account is None:
+        return jsonify({"ok": False, "error": "account not found"}), 404
+    force = is_truthy_query_arg("force")
+    cached = cached_tokens(account)
+    if has_cached_tokens(account) and not force:
+        return jsonify({"ok": True, "tokens": cached, "source": "cache"})
+    try:
+        tokens, payload = fetch_remote_tokens(account)
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": "missing session"}), 400
+    except requests.RequestException as exc:
+        return jsonify({"ok": False, "error": f"network error: {exc}"}), 502
+    except RuntimeError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 502
+    return jsonify({"ok": True, "tokens": tokens, "source": "remote", "payload": payload})
+
+
+@app.route("/api/accounts/<int:account_index>/tokens", methods=["POST"])
+def create_token(account_index: int):
+    account = get_account_by_index(account_index)
+    if account is None:
+        return jsonify({"ok": False, "error": "account not found"}), 404
+    payload = request.get_json(force=True)
+    token_name = str(payload.get("name") or "").strip() if isinstance(payload, dict) else ""
+    token_group = str(payload.get("group") or "").strip() if isinstance(payload, dict) else ""
+    if not token_name:
+        return jsonify({"ok": False, "error": "token name is required"}), 400
+    if not token_group:
+        return jsonify({"ok": False, "error": "token group is required"}), 400
+    base_url, session_value, headers, cookies = build_token_headers(account)
+    if not session_value:
+        return jsonify({"ok": False, "error": "missing session"}), 400
+    url = base_url.rstrip("/") + "/" + TOKEN_PATH.lstrip("/")
+    create_payload = {
+        "remain_quota": 0,
+        "remain_amount": 0,
+        "expired_time": -1,
+        "unlimited_quota": True,
+        "model_limits_enabled": False,
+        "model_limits": "",
+        "cross_group_retry": False,
+        "name": token_name,
+        "group": token_group,
+        "allow_ips": "",
+    }
+    try:
+        resp = requests.post(url, cookies=cookies, headers=headers, json=create_payload, timeout=TIMEOUT_SECONDS)
+    except requests.RequestException as exc:
+        return jsonify({"ok": False, "error": f"network error: {exc}"}), 502
+    api_response = parse_api_payload(resp)
+    error = api_payload_error(api_response, resp)
+    if error:
+        refreshed_groups: list[dict[str, Any]] = []
+        groups_refreshed = False
+        if token_group_error(error):
+            try:
+                refreshed_groups, _ = fetch_remote_token_groups(account)
+                groups_refreshed = True
+            except Exception:
+                groups_refreshed = False
+        return jsonify({
+            "ok": False,
+            "error": error,
+            "groups_refreshed": groups_refreshed,
+            "groups": refreshed_groups,
+            "payload": api_response,
+        }), 502
+    token = normalize_created_token(api_response, token_name, token_group)
+    cache_add_token(account, token)
+    return jsonify({"ok": True, "token": token, "payload": api_response})
+
+
+@app.route("/api/accounts/<int:account_index>/tokens/<int:token_id>", methods=["DELETE"])
+def delete_token(account_index: int, token_id: int):
+    account = get_account_by_index(account_index)
+    if account is None:
+        return jsonify({"ok": False, "error": "account not found"}), 404
+    base_url, session_value, headers, cookies = build_token_headers(account)
+    if not session_value:
+        return jsonify({"ok": False, "error": "missing session"}), 400
+    url = base_url.rstrip("/") + "/" + TOKEN_PATH.lstrip("/") + str(token_id)
+    try:
+        resp = requests.delete(url, cookies=cookies, headers=headers, timeout=TIMEOUT_SECONDS)
+    except requests.RequestException as exc:
+        return jsonify({"ok": False, "error": f"network error: {exc}"}), 502
+    payload = parse_api_payload(resp)
+    error = api_payload_error(payload, resp)
+    if error:
+        return jsonify({"ok": False, "error": error, "payload": payload}), 502
+    cache_delete_token(account, token_id)
+    return jsonify({"ok": True, "payload": payload})
+
+
+@app.route("/api/accounts/<int:account_index>/tokens/<int:token_id>/key", methods=["POST"])
+def reveal_token_key(account_index: int, token_id: int):
+    account = get_account_by_index(account_index)
+    if account is None:
+        return jsonify({"ok": False, "error": "account not found"}), 404
+    base_url, session_value, headers, cookies = build_token_headers(account)
+    if not session_value:
+        return jsonify({"ok": False, "error": "missing session"}), 400
+    url = base_url.rstrip("/") + "/" + TOKEN_PATH.lstrip("/") + f"{token_id}/key"
+    try:
+        resp = requests.post(url, cookies=cookies, headers=headers, timeout=TIMEOUT_SECONDS)
+    except requests.RequestException as exc:
+        return jsonify({"ok": False, "error": f"network error: {exc}"}), 502
+    payload = parse_api_payload(resp)
+    error = api_payload_error(payload, resp)
+    if error:
+        return jsonify({"ok": False, "error": error, "payload": payload}), 502
+    return jsonify({"ok": True, "key": key_from_token_payload(payload), "payload": payload})
 
 
 @app.route("/api/system/status", methods=["GET"])
