@@ -8,6 +8,7 @@ A local Flask web console for multi-account new-api management.
 - Per-account domain (`base_url`) configuration (required when adding/editing)
 - One-click sign-in for one account or all enabled accounts
 - Persisted **today sign-in status** (`已签到 / 失败 / 未知`)
+- Automatic detection of websites that do not support check-in
 - Account check with:
   - current balance
   - delta vs previous check
@@ -80,13 +81,17 @@ run_web.bat
 4. Open browser:
 
 - `http://127.0.0.1:5050`
+- On Windows, `run_web.bat` first terminates all previous service processes listening on port `5050`, then starts one new service instance.
 
 ## Core Behavior
 
 ### 1) Sign-in status persistence
 
 - When you run `签到` / `全部签到`, successful states (`SIGNED_NOW`, `ALREADY_SIGNED`) are saved as `已签到`.
-- Failed states are saved as `失败`.
+- Failed states remain `未签到`.
+- If the website reports that check-in is disabled or unsupported, or the check-in endpoint returns HTTP 404/405, the status is saved as `不可签到`.
+- Once one account confirms that its website cannot check in, that website group's check-in buttons are disabled and the group summary displays `不可签到`.
+- `全部签到` skips every account belonging to a website already marked `不可签到` and does not send check-in requests for those accounts.
 - Store file: `data/signin_status.json`.
 
 ### 2) Daily cleanup

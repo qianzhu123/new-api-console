@@ -61,6 +61,19 @@ AUTH_KEYWORDS = [
     "forbidden",
 ]
 VERIFY_KEYWORDS = ["turnstile", "captcha", "verification"]
+CHECKIN_UNSUPPORTED_KEYWORDS = [
+    "不支持签到",
+    "签到未开启",
+    "未开启签到",
+    "签到功能未开启",
+    "签到未启用",
+    "checkin disabled",
+    "check-in disabled",
+    "checkin is disabled",
+    "check-in is disabled",
+    "checkin not supported",
+    "check-in not supported",
+]
 
 
 app = Flask(__name__)
@@ -401,7 +414,7 @@ def _normalize_signin_store(data: dict[str, Any]) -> tuple[dict[str, Any], bool]
                 if not status:
                     changed = True
                     continue
-                if status != "已签到":
+                if status not in ("已签到", "不可签到"):
                     status = "未签到"
                 normalized["accounts"][name] = {
                     "status": status,
@@ -451,6 +464,17 @@ def set_signin_status_today(account_name: str, status: str) -> None:
         atomic_save_json(SIGNIN_PATH, store)
 
 
+def set_base_url_signin_status_today(accounts: list[dict[str, Any]], base_url: str, status: str) -> None:
+    normalized_url = normalize_base_url(base_url)
+    for account in accounts:
+        account_url = normalize_base_url(str(account.get("base_url") or get_base_url()))
+        if account_url != normalized_url:
+            continue
+        account_index = int(account.get("account_index", 0) or 0)
+        runtime_key = str(account_index) if account_index > 0 else str(account.get("name") or "")
+        set_signin_status_today(runtime_key, status)
+
+
 def get_signin_status_today(account_name: str) -> str:
     if not account_name:
         return "未签到"
@@ -462,7 +486,10 @@ def get_signin_status_today(account_name: str) -> str:
     if isinstance(item, dict):
         status = str(item.get("status") or "").strip()
         if status:
-            return "已签到" if status == "已签到" else "未签到"
+            if status == "已签到":
+                return "已签到"
+            if status == "不可签到":
+                return "不可签到"
     return "未签到"
 
 
@@ -1048,6 +1075,20 @@ def build_yesterday_delta(account_name: str, current_quota: int | float | None) 
     }
 
 
+def cached_checkin_disabled(account_index: int) -> bool:
+    if account_index <= 0:
+        return False
+    cached = get_status_cache(str(account_index))
+    system_status = cached.get("system_status") if isinstance(cached, dict) else None
+    return isinstance(system_status, dict) and system_status.get("checkin_enabled") is False
+
+
+def checkin_response_unsupported(status_code: int, text: str) -> bool:
+    if status_code in (404, 405):
+        return True
+    return contains_any(text, CHECKIN_UNSUPPORTED_KEYWORDS)
+
+
 def classify_checkin(account: dict[str, Any]) -> dict[str, Any]:
     name = account.get("name") or "unknown"
     account_index = int(account.get("account_index", 0) or 0)
@@ -1055,6 +1096,14 @@ def classify_checkin(account: dict[str, Any]) -> dict[str, Any]:
     user_id = (account.get("new_api_user") or "").strip()
     base_url = normalize_base_url(str(account.get("base_url") or get_base_url()))
 
+    if cached_checkin_disabled(account_index):
+        return {
+            "account": name,
+            "account_index": account_index,
+            "state": "UNSUPPORTED",
+            "message": "该网站未开启签到功能",
+            "timestamp": now_ts(),
+        }
     if not session_value:
         return {
             "account": name,
@@ -1093,7 +1142,10 @@ def classify_checkin(account: dict[str, Any]) -> dict[str, Any]:
     text = payload_text(data)
     message = str(data.get("message", "")).strip() if isinstance(data, dict) else ""
 
-    if "\u4eca\u65e5\u5df2\u7b7e\u5230" in message or "already" in message.lower():
+    if checkin_response_unsupported(resp.status_code, text):
+        state = "UNSUPPORTED"
+        message = message or "该网站不支持签到"
+    elif "\u4eca\u65e5\u5df2\u7b7e\u5230" in message or "already" in message.lower():
         state = "ALREADY_SIGNED"
     elif "\u7b7e\u5230\u6210\u529f" in message or (isinstance(data, dict) and data.get("success") is True):
         state = "SIGNED_NOW"
@@ -1340,6 +1392,7 @@ def get_next_account_index(accounts: list[dict[str, Any]]) -> int:
 
 def to_public_account(account: dict[str, Any], signin_status: str = "未签到", last_status: dict[str, Any] | None = None) -> dict[str, Any]:
     api_keys = parse_api_keys(account.get("api_keys"))
+    public_signin_status = signin_status if signin_status in ("已签到", "不可签到") else "未签到"
     return {
         "account_index": int(account.get("account_index", 0) or 0),
         "name": account.get("name", ""),
@@ -1349,7 +1402,7 @@ def to_public_account(account: dict[str, Any], signin_status: str = "未签到",
         "session": str(account.get("session", "")),
         "api_keys": api_keys,
         "api_keys_masked": [mask_api_key(k) for k in api_keys],
-        "signin_status": "已签到" if signin_status == "已签到" else "未签到",
+        "signin_status": public_signin_status,
         "last_status": last_status if isinstance(last_status, dict) else None,
     }
 
@@ -1550,6 +1603,8 @@ def checkin_one(account_index: int):
     runtime_key = str(account_index)
     if result.get("state") in ("SIGNED_NOW", "ALREADY_SIGNED"):
         set_signin_status_today(runtime_key, "已签到")
+    elif result.get("state") == "UNSUPPORTED":
+        set_base_url_signin_status_today(accounts, str(accounts[idx].get("base_url") or get_base_url()), "不可签到")
     elif result.get("state") == "FAILED":
         set_signin_status_today(runtime_key, "未签到")
     return jsonify({"ok": True, "result": result})
@@ -1559,21 +1614,49 @@ def checkin_one(account_index: int):
 def checkin_all():
     load_signin_store(normalize_and_persist=True)
     cfg = load_config()
-    accounts = [a for a in cfg.get("accounts", []) if a.get("enabled", True)]
+    all_accounts = cfg.get("accounts", [])
+    accounts = [a for a in all_accounts if a.get("enabled", True)]
+    unsupported_base_urls: set[str] = set()
+    for account in accounts:
+        account_index = int(account.get("account_index", 0) or 0)
+        runtime_key = str(account_index) if account_index > 0 else str(account.get("name") or "")
+        if get_signin_status_today(runtime_key) == "不可签到" or cached_checkin_disabled(account_index):
+            unsupported_base_urls.add(normalize_base_url(str(account.get("base_url") or get_base_url())))
+    for base_url in unsupported_base_urls:
+        set_base_url_signin_status_today(all_accounts, base_url, "不可签到")
 
     def checkin_account(acc: dict[str, Any]) -> dict[str, Any]:
-        result = classify_checkin(acc)
         account_name = str(acc.get("name") or "")
         account_index = int(acc.get("account_index", 0) or 0)
         runtime_key = str(account_index) if account_index > 0 else account_name
+        account_base_url = normalize_base_url(str(acc.get("base_url") or get_base_url()))
+        if account_base_url in unsupported_base_urls:
+            return {
+                "account": account_name,
+                "account_index": account_index,
+                "state": "UNSUPPORTED",
+                "message": "该网站不可签到，已跳过",
+                "skipped": True,
+                "timestamp": now_ts(),
+            }
+        result = classify_checkin(acc)
         result["account_index"] = account_index
         if result.get("state") in ("SIGNED_NOW", "ALREADY_SIGNED"):
             set_signin_status_today(runtime_key, "已签到")
+        elif result.get("state") == "UNSUPPORTED":
+            set_signin_status_today(runtime_key, "不可签到")
         elif result.get("state") == "FAILED":
             set_signin_status_today(runtime_key, "未签到")
         return result
 
     results = run_batch_parallel(accounts, checkin_account)
+    unsupported_urls = unsupported_base_urls | {
+        normalize_base_url(str(account.get("base_url") or get_base_url()))
+        for account, result in zip(accounts, results)
+        if result.get("state") == "UNSUPPORTED"
+    }
+    for base_url in unsupported_urls:
+        set_base_url_signin_status_today(all_accounts, base_url, "不可签到")
     return jsonify({"ok": True, "results": results})
 
 
@@ -1588,6 +1671,8 @@ def status_one(account_index: int):
     system_status = fetch_public_status(base_url=account_base_url)
     result = check_status(accounts[idx], system_status=system_status)
     result["account_index"] = account_index
+    if system_status.get("checkin_enabled") is False:
+        set_base_url_signin_status_today(accounts, account_base_url, "不可签到")
     result["signin_status"] = get_signin_status_today(str(account_index))
     set_status_cache(str(account_index), result)
     return jsonify({"ok": True, "result": result, "system_status": system_status})
@@ -1596,7 +1681,8 @@ def status_one(account_index: int):
 @app.route("/api/accounts/status-all", methods=["POST"])
 def status_all():
     cfg = load_config()
-    accounts = [a for a in cfg.get("accounts", []) if a.get("enabled", True)]
+    all_accounts = cfg.get("accounts", [])
+    accounts = [a for a in all_accounts if a.get("enabled", True)]
     base_urls = []
     for acc in accounts:
         base_url = normalize_base_url(str(acc.get("base_url") or get_base_url()))
@@ -1618,6 +1704,13 @@ def status_all():
         return result
 
     results = run_batch_parallel(accounts, check_account_status)
+    for base_url, system_status in system_status_cache.items():
+        if system_status.get("checkin_enabled") is False:
+            set_base_url_signin_status_today(all_accounts, base_url, "不可签到")
+    for result in results:
+        runtime_key = str(result.get("account_index") or "")
+        if runtime_key:
+            result["signin_status"] = get_signin_status_today(runtime_key)
     default_base_url = normalize_base_url(str(get_base_url()))
     return jsonify({"ok": True, "results": results, "system_status": system_status_cache.get(default_base_url) or fetch_public_status(base_url=default_base_url)})
 

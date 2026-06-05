@@ -34,7 +34,7 @@
         radial-gradient(circle at 95% 10%, rgba(106, 160, 125, 0.15), transparent 32%),
         linear-gradient(180deg, #fbf8f2 0%, #f7f4ed 100%);
     }
-    .wrap { max-width: 1320px; margin: 0 auto; padding: 22px 18px 26px; }
+    .wrap { max-width: 1480px; margin: 0 auto; padding: 22px 18px 26px; }
     .head {
       display: flex;
       justify-content: space-between;
@@ -71,7 +71,7 @@
     button.warn { background: var(--warn); box-shadow: 0 3px 10px rgba(183,121,31,.23); }
     button.bad { background: var(--bad); box-shadow: 0 3px 10px rgba(197,48,48,.22); }
     button:disabled { opacity: 0.55; cursor: not-allowed; transform: none; }
-    .grid { display: grid; grid-template-columns: minmax(0, 1.72fr) minmax(360px, .78fr); gap: 12px; align-items: start; }
+    .grid { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(480px, .9fr); gap: 12px; align-items: start; }
     .card {
       background: var(--panel);
       border: 1px solid var(--line);
@@ -113,7 +113,34 @@
     .group-stat { display:inline-flex; font-weight:600; }
     .group-actions { display:flex; gap:10px; flex-wrap:nowrap; justify-content:flex-end; flex-shrink:0; }
     .group-actions button { padding:5px 8px; font-size:12px; }
-    .fold-btn { width:28px; height:28px; padding:0; border-radius:999px; }
+    .fold-btn {
+      width: 28px;
+      height: 28px;
+      padding: 0;
+      border: 0;
+      border-radius: 7px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      color: #715829;
+      background: transparent;
+      box-shadow: none;
+    }
+    .fold-btn:hover {
+      color: #2f5878;
+      background: rgba(212,175,55,.14);
+      box-shadow: none;
+      transform: none;
+    }
+    .fold-icon {
+      width: 9px;
+      height: 9px;
+      border-right: 2px solid currentColor;
+      border-bottom: 2px solid currentColor;
+      transform: rotate(-45deg);
+      transition: transform .16s ease;
+    }
+    .fold-icon.expanded { transform: rotate(45deg); }
     .status-short { white-space: nowrap; }
     .list-tools {
       display:flex;
@@ -255,8 +282,8 @@
       border: 1px solid rgba(176,139,47,.22);
       border-radius: 12px;
       background: rgba(255,255,255,0.74);
-      padding: 10px;
-      min-height: 88px;
+      padding: 11px;
+      min-height: 94px;
       min-width: 0;
       display: flex;
       flex-direction: column;
@@ -268,12 +295,15 @@
       font-weight: 600;
     }
     .metric-value {
-      font-size: 24px;
+      max-width: 100%;
+      font-size: 26px;
       line-height: 1.05;
       font-weight: 700;
       color: #2d3748;
       letter-spacing: 0;
       white-space: nowrap;
+      overflow: hidden;
+      text-overflow: clip;
     }
     .metric-positive { color: var(--ok); }
     .metric-negative { color: var(--bad); }
@@ -585,9 +615,9 @@
       .modal-grid { grid-template-columns: 1fr; }
     }
     @media (max-width: 1280px) and (min-width: 981px) {
+      .grid { grid-template-columns: minmax(0, 1.38fr) minmax(470px, .95fr); }
       .row-actions { gap: 3px; }
       .row-actions button { padding: 5px 5px; font-size: 11px; min-width: 36px; }
-      .metric-value { font-size: 22px; }
     }
     @media (max-width: 560px) {
       .metric-grid { grid-template-columns: 1fr; }
@@ -894,7 +924,14 @@ function escapeHtml(v) {
     .replace(/'/g, '&#39;');
 }
 function getQuotaPerUnit(sys) { const n = Number(sys?.quota_per_unit); return Number.isFinite(n) && n > 0 ? n : null; }
-function getMoneySymbol(sys) { const displayType = quoteText(sys?.quota_display_type).toUpperCase(); if (displayType === 'USD') return '$'; return quoteText(sys?.custom_currency_symbol) || '$'; }
+function getMoneySymbol(sys) {
+  const displayType = quoteText(sys?.quota_display_type).trim().toUpperCase();
+  if (displayType === 'USD') return '$';
+  if (['CNY', 'RMB', 'CNH'].includes(displayType)) return '￥';
+  const customSymbol = quoteText(sys?.custom_currency_symbol).trim();
+  if (customSymbol && customSymbol !== '¤') return customSymbol;
+  return displayType === 'CUSTOM' ? '￥' : '$';
+}
 function quotaToMoney(rawQuota, sys) { const q = Number(rawQuota); const unit = getQuotaPerUnit(sys); if (!Number.isFinite(q) || !unit) return null; return q / unit; }
 function formatMoney(v, sys, withSign = false) { if (!Number.isFinite(v)) return '-'; const symbol = getMoneySymbol(sys); const sign = withSign ? (v >= 0 ? '+' : '') : ''; return `${sign}${symbol}${v.toFixed(2)}`; }
 function formatShortTs(ts) { const s = quoteText(ts).trim(); if (!s) return '-'; const m = s.match(/^(\d{4})-(\d{2})-(\d{2})\s+(\d{2}:\d{2}:\d{2})$/); return m ? `${m[2]}-${m[3]} ${m[4]}` : s; }
@@ -1153,8 +1190,31 @@ function getGroupedAccounts() {
 
 function groupKeyFromUrl(url) { return `base:${url}`; }
 
+function accountCheckinUnsupported(acc) {
+  const key = accountKey(acc);
+  if ((state.signinStatus[key] || acc.signin_status) === '不可签到') return true;
+  if (state.checkinResults[key]?.state === 'UNSUPPORTED') return true;
+  const status = getAccountStatus(acc);
+  return status?.system_status?.checkin_enabled === false;
+}
+
+function isGroupCheckinUnsupported(accounts) {
+  return accounts.some(accountCheckinUnsupported);
+}
+
+function markAccountSiteCheckinUnsupported(key) {
+  const account = findAccountByKey(key);
+  if (!account) return;
+  const baseUrl = normalizeBaseUrlInput(account.base_url || state.defaultBaseUrl);
+  for (const item of state.accounts) {
+    if (normalizeBaseUrlInput(item.base_url || state.defaultBaseUrl) !== baseUrl) continue;
+    state.signinStatus[accountKey(item)] = '不可签到';
+  }
+}
+
 function getGroupStats(accounts) {
   let enabled = 0, signed = 0, valid = 0, totalMoney = 0, hasMoney = false, systemStatus = null;
+  const checkinUnsupported = isGroupCheckinUnsupported(accounts);
   for (const acc of accounts) {
     const key = accountKey(acc);
     if (acc.enabled) enabled += 1;
@@ -1168,7 +1228,7 @@ function getGroupStats(accounts) {
       if (Number.isFinite(money)) { totalMoney += money; hasMoney = true; }
     }
   }
-  return { enabled, signed, valid, totalMoney: hasMoney ? totalMoney : null, systemStatus };
+  return { enabled, signed, valid, totalMoney: hasMoney ? totalMoney : null, systemStatus, checkinUnsupported };
 }
 
 function renderGroupRow(group) {
@@ -1187,17 +1247,19 @@ function renderGroupRow(group) {
     <td class="group-cell" colspan="8">
       <div class="group-box">
         <div class="group-main">
-          <button type="button" class="fold-btn secondary" data-group-action="toggle" data-group-key="${key}" title="展开/折叠">${collapsed ? '▶' : '▼'}</button>
+          <button type="button" class="fold-btn" data-group-action="toggle" data-group-key="${key}" title="${collapsed ? '展开' : '折叠'}">
+            <span class="fold-icon ${collapsed ? '' : 'expanded'}" aria-hidden="true"></span>
+          </button>
           <span class="group-url mono">${group.baseUrl}</span>
           <span class="group-stats">
             <span class="group-stat">账号数 ${group.accounts.length}</span>
             <span class="group-stat">可用数 ${stats.valid}</span>
-            <span class="group-stat">今日签到数 ${stats.signed}</span>
+            <span class="group-stat">${stats.checkinUnsupported ? '不可签到' : `今日签到数 ${stats.signed}`}</span>
             <span class="group-stat">总额度 ${formatMoney(stats.totalMoney, stats.systemStatus || state.systemStatus)}</span>
           </span>
         </div>
         <div class="group-actions">
-          <button type="button" data-group-action="checkin" data-group-key="${key}">全部签到</button>
+          <button type="button" data-group-action="checkin" data-group-key="${key}" ${stats.checkinUnsupported ? 'disabled title="该网站不支持签到"' : ''}>${stats.checkinUnsupported ? '不可签到' : '全部签到'}</button>
           <button type="button" class="secondary" data-group-action="status" data-group-key="${key}">全部检测</button>
         </div>
       </div>
@@ -1209,6 +1271,7 @@ function renderTable() {
   el.body.innerHTML = '';
   for (const group of getGroupedAccounts()) {
     const groupKey = groupKeyFromUrl(group.baseUrl);
+    const groupCheckinUnsupported = isGroupCheckinUnsupported(group.accounts);
     el.body.appendChild(renderGroupRow(group));
     if (state.collapsedGroups[groupKey]) continue;
 
@@ -1223,7 +1286,9 @@ function renderTable() {
       const running = !!state.pendingAccounts[key];
       const rowSum = renderRowSummary(key);
       const activeAction = state.pendingAccounts[key];
-      const checkinLabel = activeAction === 'checkin' ? '签到中' : '签到';
+      const checkinDisabled = groupCheckinUnsupported || accountCheckinUnsupported(acc);
+      if (checkinDisabled) rowSum.checkinText = '不可签到';
+      const checkinLabel = checkinDisabled ? '不可签到' : (activeAction === 'checkin' ? '签到中' : '签到');
       const statusLabel = activeAction === 'status' ? '检测中' : '检测';
       const deleteLabel = activeAction === 'delete' ? '处理中' : '删除';
 
@@ -1237,7 +1302,7 @@ function renderTable() {
         <td class="small status-short" title="${(state.statusResults[key]?.api_error || '').replace(/"/g, '&quot;')}">${rowSum.statusText}</td>
         <td>
           <div class="row-actions">
-            <button data-action="checkin" data-key="${key}" class="${activeAction === 'checkin' ? 'busy-button' : ''}" ${running ? 'disabled' : ''}>${checkinLabel}</button>
+            <button data-action="checkin" data-key="${key}" class="${activeAction === 'checkin' ? 'busy-button' : ''}" ${(running || checkinDisabled) ? 'disabled' : ''} ${checkinDisabled ? 'title="该网站不支持签到"' : ''}>${checkinLabel}</button>
             <button data-action="status" data-key="${key}" class="secondary ${activeAction === 'status' ? 'busy-button' : ''}" ${running ? 'disabled' : ''}>${statusLabel}</button>
             <button data-action="delete" data-key="${key}" class="bad ${activeAction === 'delete' ? 'busy-button' : ''}" ${running ? 'disabled' : ''}>${deleteLabel}</button>
           </div>
@@ -1284,6 +1349,16 @@ function renderTable() {
 
 function metricTone(value) { const n = Number(value); if (!Number.isFinite(n)) return 'metric-neutral'; if (n > 0) return 'metric-positive'; if (n < 0) return 'metric-negative'; return 'metric-neutral'; }
 function flashDetail() { el.detailStatus.classList.remove('flash'); void el.detailStatus.offsetWidth; el.detailStatus.classList.add('flash'); }
+function fitMetricValues() {
+  for (const node of el.detailStatus.querySelectorAll('.metric-value')) {
+    node.style.fontSize = '';
+    let size = Number.parseFloat(window.getComputedStyle(node).fontSize) || 24;
+    while (node.scrollWidth > node.clientWidth && size > 16) {
+      size -= 1;
+      node.style.fontSize = `${size}px`;
+    }
+  }
+}
 
 function tokenBusyText(key) {
   const busy = state.tokenLoading[key];
@@ -1663,6 +1738,7 @@ function renderDetail() {
     ${sr && !sr.session_valid ? `<div class="small bad2" style="margin-top:8px; word-break:break-word;">异常信息：${sr.api_error || '接口返回异常'}<\/div>` : ''}
     <div id="token-panel" class="token-panel"></div>
   `;
+  fitMetricValues();
   flashDetail();
   fillForm(acc);
   renderTokenPanel(acc);
@@ -1784,9 +1860,11 @@ async function checkinOne(key) {
   notify('warn2', '开始签到', `${label} 正在执行签到。`);
   const data = await api(`/api/accounts/${encodeURIComponent(key)}/checkin`, { method: 'POST', body: '{}' });
   state.checkinResults[key] = data.result;
-  if (data.result.state === 'FAILED') { state.signinStatus[key] = '未签到'; log(`${label} 签到失败：${data.result.message || ''}`, 'bad2'); notify('bad2', '签到失败', `${label}：${data.result.message || '未知原因'}`); }
+  if (data.result.state === 'UNSUPPORTED') { markAccountSiteCheckinUnsupported(key); log(`${label} 所在网站不可签到`, 'warn2'); notify('warn2', '该网站不可签到', `${label}：${data.result.message || '网站未开启签到功能'}`); }
+  else if (data.result.state === 'FAILED') { state.signinStatus[key] = '未签到'; log(`${label} 签到失败：${data.result.message || ''}`, 'bad2'); notify('bad2', '签到失败', `${label}：${data.result.message || '未知原因'}`); }
   else if (data.result.state === 'ALREADY_SIGNED') { state.signinStatus[key] = '已签到'; log(`${label} 今日已签到`, 'warn2'); notify('warn2', '今日已签到', `${label} 今天已经完成签到。`); }
   else { state.signinStatus[key] = '已签到'; log(`${label} 签到成功`, 'ok'); notify('ok', '签到成功', `${label} 已成功签到。`); }
+  return data.result;
 }
 
 async function statusOne(key) {
@@ -1795,6 +1873,7 @@ async function statusOne(key) {
   const data = await api(`/api/accounts/${encodeURIComponent(key)}/status`, { method: 'POST', body: '{}' });
   state.statusResults[key] = data.result;
   state.signinStatus[key] = data.result.signin_status;
+  if (data.result.signin_status === '不可签到') markAccountSiteCheckinUnsupported(key);
   state.systemStatus = data.system_status || state.systemStatus;
   const r = data.result;
   if (r.session_valid) {
@@ -1810,16 +1889,17 @@ async function statusOne(key) {
 async function checkinAll() {
   notify('warn2', '开始全部签到', '正在批量执行签到，请稍候。');
   const data = await api('/api/accounts/checkin-all', { method: 'POST', body: '{}' });
-  let okCount = 0, alreadyCount = 0, unsignedCount = 0;
+  let okCount = 0, alreadyCount = 0, unsignedCount = 0, unsupportedCount = 0;
   for (const r of data.results || []) {
     const key = String(r.account_index || '');
     const label = accountLabel(key);
     state.checkinResults[key] = r;
-    if (r.state === 'FAILED') { state.signinStatus[key] = '未签到'; log(`${label} 签到失败：${r.message || ''}`, 'bad2'); unsignedCount += 1; }
+    if (r.state === 'UNSUPPORTED') { markAccountSiteCheckinUnsupported(key); log(`${label} 所在网站不可签到${r.skipped ? '，已跳过' : ''}`, 'warn2'); unsupportedCount += 1; }
+    else if (r.state === 'FAILED') { state.signinStatus[key] = '未签到'; log(`${label} 签到失败：${r.message || ''}`, 'bad2'); unsignedCount += 1; }
     else if (r.state === 'ALREADY_SIGNED') { state.signinStatus[key] = '已签到'; log(`${label} 今日已签到`, 'warn2'); alreadyCount += 1; }
     else { state.signinStatus[key] = '已签到'; log(`${label} 签到成功`, 'ok'); okCount += 1; }
   }
-  notify('ok', '全部签到完成', `成功 ${okCount} 个，已签到 ${alreadyCount} 个，未签到 ${unsignedCount} 个。`);
+  notify('ok', '全部签到完成', `成功 ${okCount} 个，已签到 ${alreadyCount} 个，未签到 ${unsignedCount} 个，不可签到 ${unsupportedCount} 个。`);
 }
 
 async function statusAll() {
@@ -1832,6 +1912,7 @@ async function statusAll() {
     const label = accountLabel(key);
     state.statusResults[key] = r;
     state.signinStatus[key] = r.signin_status;
+    if (r.signin_status === '不可签到') markAccountSiteCheckinUnsupported(key);
     if (r.session_valid) { log(`${label} 检测成功`, 'ok'); validCount += 1; }
     else { log(`${label} 检测异常：${r.api_error || ''}`, 'warn2'); failCount += 1; }
   }
@@ -1840,11 +1921,16 @@ async function statusAll() {
 
 
 async function runGroupCheckin(group) {
+  if (isGroupCheckinUnsupported(group.accounts)) {
+    notify('warn2', '该网站不可签到', `${group.baseUrl} 未开启签到功能。`);
+    return;
+  }
   const accounts = group.accounts.filter((acc) => acc.enabled);
   notify('warn2', '开始地址签到', `${group.baseUrl}：共 ${accounts.length} 个启用账号。`);
   for (const acc of accounts) {
     const key = accountKey(acc);
     await withAccountBusy(key, 'checkin', () => checkinOne(key));
+    if (isGroupCheckinUnsupported(group.accounts)) break;
   }
   renderTable();
   renderDetail();
@@ -2010,6 +2096,7 @@ window.addEventListener('keydown', (e) => {
   if (el.addModal.classList.contains('open')) closeAddModal();
   if (el.tokenModal.classList.contains('open')) closeTokenModal();
 });
+window.addEventListener('resize', fitMetricValues);
 for (const node of [el.fName, el.fBaseUrl, el.fUser, el.fSession, el.mName, el.mBaseUrl, el.mUser, el.mSession]) {
   node.addEventListener('input', () => {
     setFieldInvalid(node, false);

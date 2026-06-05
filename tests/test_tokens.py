@@ -362,6 +362,14 @@ def test_frontend_contains_token_panel_and_no_api_key_editor():
     assert "API Key（每行一个）" not in template
 
 
+def test_frontend_normalizes_cny_currency_symbol():
+    template = (app.ROOT / "templates" / "index.html").read_text(encoding="utf-8")
+
+    assert "['CNY', 'RMB', 'CNH'].includes(displayType)" in template
+    assert "return '￥';" in template
+    assert "customSymbol !== '¤'" in template
+
+
 def test_frontend_create_token_closes_modal_before_network_request():
     template = (app.ROOT / "templates" / "index.html").read_text(encoding="utf-8")
     create_start = template.index("async function createTokenForAccount")
@@ -376,7 +384,10 @@ def test_frontend_token_scroll_and_row_actions_are_constrained():
 
     assert "overscroll-behavior: contain;" in template
     assert "--action-col: 168px;" in template
-    assert ".grid { display: grid; grid-template-columns: minmax(0, 1.72fr) minmax(360px, .78fr); gap: 12px;" in template
+    assert ".grid { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(480px, .9fr); gap: 12px;" in template
     assert ".row-actions { display: flex; gap: 6px;" in template
     assert ".row-actions { justify-content: flex-start;" in template
     assert ".group-box { display:grid;" in template
+    assert "min-height: 94px;" in template
+    assert "function fitMetricValues()" in template
+    assert "node.scrollWidth > node.clientWidth" in template
