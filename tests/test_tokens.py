@@ -334,6 +334,13 @@ def test_token_key_prefix_is_not_duplicated():
     assert app.format_token_key("") == ""
 
 
+def test_data_layout_creates_empty_token_cache():
+    app.ensure_data_layout()
+
+    assert app.TOKEN_CACHE_PATH.exists()
+    assert json.loads(app.TOKEN_CACHE_PATH.read_text(encoding="utf-8")) == {"accounts": {}}
+
+
 def test_frontend_contains_token_panel_and_no_api_key_editor():
     template = (app.ROOT / "templates" / "index.html").read_text(encoding="utf-8")
 

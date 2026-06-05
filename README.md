@@ -12,7 +12,10 @@ A local Flask web console for multi-account new-api management.
   - current balance
   - delta vs previous check
   - previous check timestamp
-- API key display (masked/full toggle) and copy to clipboard
+- Token management:
+  - create tokens from locally cached groups
+  - refresh token groups and token records on demand
+  - copy full token keys after the remote key endpoint reveals them
 
 ## Tech Stack
 
@@ -31,7 +34,8 @@ qiandao/
 │  ├─ session.json         # Local account config
 │  ├─ quota_history.json   # Local balance history
 │  ├─ signin_status.json   # Today sign-in status store
-│  └─ status_cache.json    # Latest account status cache
+│  ├─ status_cache.json    # Latest account status cache
+│  └─ token_cache.json     # Local token group/token metadata cache
 ├─ templates/
 │  └─ index.html           # Web UI
 ├─ .gitignore
@@ -57,11 +61,7 @@ pip install flask requests
       "enabled": true,
       "base_url": "https://your-service-domain.com",
       "new_api_user": "1571",
-      "session": "YOUR_SESSION",
-      "api_keys": [
-        "sk-xxxx",
-        "sk-yyyy"
-      ]
+      "session": "YOUR_SESSION"
     }
   ]
 }
@@ -102,12 +102,25 @@ run_web.bat
 - Latest detection result is also cached locally in `data/status_cache.json`.
 - If current response has no quota, app falls back to last snapshot and marks it as cached source in UI.
 
+### 4) Token group and token metadata cache
+
+- Store file: `data/token_cache.json`.
+- The file is created during startup if it does not already exist.
+- Opening the add-token dialog uses locally cached groups first.
+- If no local groups exist, the app requests `/api/user/self/groups` from the account's `base_url` and saves the result.
+- The `刷新令牌` button forces a remote refresh of both token groups and token metadata.
+- Successful token creation inserts the new token metadata into the local cache.
+- Successful token deletion removes the token metadata from the local cache.
+- If token creation fails because the selected group no longer exists, the app refreshes groups from the remote site and asks you to select again.
+- Full revealed `sk-...` token keys are not persisted to `data/token_cache.json`; only token metadata is cached locally.
+
 ## UI Actions
 
 - `全部签到`: sign in all enabled accounts and persist today sign-in state.
 - `全部检测`: check all enabled accounts and update balance delta.
-- Row action `复制APIKey`: copy all keys of that account (newline separated).
 - Row action `检测`: run single-account check.
+- `添加令牌`: create a token after token groups are loaded.
+- `刷新令牌`: force-refresh token groups and token metadata from the remote site.
 
 ## Notes
 
@@ -118,5 +131,6 @@ run_web.bat
 ## Security
 
 - Keep `data/session.json` local.
-- Do not share `session` or API keys publicly.
+- Keep `data/token_cache.json` local.
+- Do not share `session` or token keys publicly.
 

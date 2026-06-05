@@ -102,6 +102,8 @@ def ensure_data_layout() -> None:
         if new_path.exists() or not legacy_path.exists():
             continue
         os.replace(legacy_path, new_path)
+    if not TOKEN_CACHE_PATH.exists():
+        atomic_save_json(TOKEN_CACHE_PATH, {"accounts": {}})
 
 
 def normalize_base_url(raw: str) -> str:
