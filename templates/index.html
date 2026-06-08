@@ -313,6 +313,122 @@
       min-height: 72px;
       margin-bottom: 8px;
     }
+    .site-model-groups {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 10px;
+    }
+    .site-model-group {
+      border: 1px solid rgba(176,139,47,.20);
+      border-radius: 13px;
+      padding: 9px;
+      background:
+        radial-gradient(circle at top right, rgba(212,175,55,.10), transparent 34%),
+        rgba(255,255,255,.50);
+    }
+    .site-model-group-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 7px;
+      cursor: pointer;
+      user-select: none;
+    }
+    .site-model-group-title {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      min-width: 0;
+      color: #3f3021;
+      font-size: 13px;
+      font-weight: 800;
+      letter-spacing: .01em;
+    }
+    .site-model-group-title::before {
+      content: "";
+      width: 8px;
+      height: 8px;
+      border-radius: 999px;
+      background: var(--accent);
+      box-shadow: 0 0 0 4px rgba(212,175,55,.13);
+      flex: 0 0 auto;
+    }
+    .site-model-group-actions {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      flex: 0 0 auto;
+    }
+    .site-model-count {
+      flex: 0 0 auto;
+      border-radius: 999px;
+      padding: 2px 8px;
+      color: #715829;
+      background: rgba(212,175,55,.14);
+      border: 1px solid rgba(176,139,47,.18);
+      font-size: 11px;
+      font-weight: 700;
+    }
+    .model-fold-btn {
+      width: 24px;
+      height: 24px;
+      padding: 0;
+      border-radius: 8px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      color: #715829;
+      background: rgba(255,255,255,.55);
+      border: 1px solid rgba(176,139,47,.20);
+      box-shadow: none;
+    }
+    .model-fold-btn:hover {
+      transform: none;
+      color: #355c7d;
+      background: rgba(212,175,55,.16);
+      box-shadow: none;
+    }
+    .model-fold-btn .fold-icon {
+      width: 8px;
+      height: 8px;
+    }
+    .site-model-tools {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+    .site-model-tools button { padding: 6px 9px; font-size: 12px; }
+    .site-model-panel.collapsed .site-model-groups { display: none; }
+    .site-model-panel-summary {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 7px;
+      padding: 9px;
+      border: 1px dashed rgba(176,139,47,.26);
+      border-radius: 13px;
+      background: rgba(255,255,255,.38);
+    }
+    .site-model-panel:not(.collapsed) .site-model-panel-summary { display: none; }
+    .site-model-summary-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 5px 9px;
+      border-radius: 999px;
+      color: #715829;
+      background: rgba(212,175,55,.13);
+      border: 1px solid rgba(176,139,47,.18);
+      font-size: 12px;
+      font-weight: 700;
+    }
+    .site-model-group.collapsed .site-models { display: none; }
+    .site-model-group.collapsed { padding-bottom: 7px; }
+    .site-model-group.collapsed .site-model-group-head { margin-bottom: 0; }
+    .site-model-area {
+      display: block;
+    }
     .site-models {
       display: flex;
       flex-wrap: wrap;
@@ -328,6 +444,17 @@
       font-size: 12px;
       overflow-wrap: anywhere;
     }
+    .site-model-group.gpt .site-model-group-title::before { background: #355c7d; box-shadow: 0 0 0 4px rgba(53,92,125,.13); }
+    .site-model-group.claude .site-model-group-title::before { background: #b7791f; box-shadow: 0 0 0 4px rgba(183,121,31,.14); }
+    .site-model-group.gemini .site-model-group-title::before { background: #2f855a; box-shadow: 0 0 0 4px rgba(47,133,90,.13); }
+    .site-model-group.deepseek .site-model-group-title::before { background: #6b46c1; box-shadow: 0 0 0 4px rgba(107,70,193,.13); }
+    .site-model-group.qwen .site-model-group-title::before { background: #0f766e; box-shadow: 0 0 0 4px rgba(15,118,110,.13); }
+    .site-model-group.llama .site-model-group-title::before { background: #0891b2; box-shadow: 0 0 0 4px rgba(8,145,178,.13); }
+    .site-model-group.mistral .site-model-group-title::before { background: #c2410c; box-shadow: 0 0 0 4px rgba(194,65,12,.13); }
+    .site-model-group.doubao .site-model-group-title::before { background: #db2777; box-shadow: 0 0 0 4px rgba(219,39,119,.13); }
+    .site-model-group.embedding .site-model-group-title::before { background: #4f46e5; box-shadow: 0 0 0 4px rgba(79,70,229,.13); }
+    .site-model-group.image .site-model-group-title::before { background: #be185d; box-shadow: 0 0 0 4px rgba(190,24,93,.13); }
+    .site-model-group.other .site-model-group-title::before { background: #6b7280; box-shadow: 0 0 0 4px rgba(107,114,128,.13); }
     .site-model-empty {
       color: var(--sub);
       font-size: 12px;
@@ -979,6 +1106,8 @@ const state = {
   confirmResolver: null,
   siteInfo: {},
   siteLoading: {},
+  collapsedModelGroups: {},
+  collapsedModelPanels: {},
 
 };
 
@@ -2039,6 +2168,109 @@ async function saveSiteRemark(baseUrl) {
   }
 }
 
+const MODEL_GROUP_RULES = [
+  { key: 'gpt', title: 'GPT / OpenAI', keywords: ['gpt', 'openai', 'chatgpt', 'o1', 'o3', 'o4'] },
+  { key: 'claude', title: 'Claude', keywords: ['claude', 'anthropic'] },
+  { key: 'gemini', title: 'Gemini', keywords: ['gemini', 'google'] },
+  { key: 'deepseek', title: 'DeepSeek', keywords: ['deepseek'] },
+  { key: 'qwen', title: 'Qwen / 通义', keywords: ['qwen', 'qwq', 'qvq', 'tongyi', '通义'] },
+  { key: 'llama', title: 'Llama / Meta', keywords: ['llama', 'meta'] },
+  { key: 'mistral', title: 'Mistral', keywords: ['mistral', 'mixtral', 'codestral'] },
+  { key: 'doubao', title: 'Doubao / 豆包', keywords: ['doubao', '豆包', 'volc', 'ark'] },
+  { key: 'embedding', title: 'Embedding / Rerank', keywords: ['embedding', 'embed', 'rerank', 'bge', 'jina'] },
+  { key: 'image', title: '图像 / 多媒体', keywords: ['dall', 'midjourney', 'mj-', 'stable-diffusion', 'sdxl', 'flux', 'imagen', 'tts', 'whisper'] },
+  { key: 'other', title: '其他模型', keywords: [] },
+];
+
+function getModelGroup(model) {
+  const name = quoteText(model).toLowerCase();
+  for (const rule of MODEL_GROUP_RULES) {
+    if (rule.key === 'other') continue;
+    if (rule.key === 'gpt' && /(^|[-_/.:])(?:gpt|chatgpt|o[134])(?:[-_/.:]|$)/i.test(name)) return rule;
+    if (rule.key === 'claude' && /(^|[-_/.:])(?:claude|anthropic)(?:[-_/.:]|$)/i.test(name)) return rule;
+    if (rule.key === 'gemini' && /(^|[-_/.:])(?:gemini|google)(?:[-_/.:]|$)/i.test(name)) return rule;
+    if (rule.key === 'deepseek' && /(^|[-_/.:])deepseek(?:[-_/.:]|$)/i.test(name)) return rule;
+    if (rule.key === 'qwen' && /(^|[-_/.:])(?:qwen|qwq|qvq|tongyi|通义)(?:[-_/.:]|$)/i.test(name)) return rule;
+    if (rule.key === 'llama' && /(^|[-_/.:])(?:llama|meta)(?:[-_/.:]|$)/i.test(name)) return rule;
+    if (rule.key === 'mistral' && /(^|[-_/.:])(?:mistral|mixtral|codestral)(?:[-_/.:]|$)/i.test(name)) return rule;
+    if (rule.key === 'doubao' && /(^|[-_/.:])(?:doubao|豆包|volc|ark)(?:[-_/.:]|$)/i.test(name)) return rule;
+    if (rule.key === 'embedding' && /(?:embedding|embed|rerank|bge|jina)/i.test(name)) return rule;
+    if (rule.key === 'image' && /(?:dall|midjourney|mj-|stable-diffusion|sdxl|flux|imagen|tts|whisper)/i.test(name)) return rule;
+    if (rule.keywords.some((keyword) => name.includes(keyword))) return rule;
+  }
+  return MODEL_GROUP_RULES[MODEL_GROUP_RULES.length - 1];
+}
+
+function groupModelsByKeyword(models) {
+  const buckets = new Map(MODEL_GROUP_RULES.map((rule) => [rule.key, { ...rule, models: [] }]));
+  for (const model of models) {
+    const rule = getModelGroup(model);
+    buckets.get(rule.key).models.push(model);
+  }
+  return MODEL_GROUP_RULES.map((rule) => buckets.get(rule.key)).filter((group) => group.models.length);
+}
+
+function modelGroupStateKey(baseUrl, groupKey) {
+  return `${normalizeBaseUrlInput(baseUrl)}::${groupKey}`;
+}
+
+function modelPanelStateKey(baseUrl) {
+  return normalizeBaseUrlInput(baseUrl);
+}
+
+function isModelPanelCollapsed(baseUrl, models) {
+  const key = modelPanelStateKey(baseUrl);
+  return state.collapsedModelPanels[key] ?? true;
+}
+
+function renderModelPanelSummary(models) {
+  const groups = groupModelsByKeyword(models);
+  return `<div class="site-model-panel-summary">${groups.map((group) => `<span class="site-model-summary-chip">${escapeHtml(group.title)} · ${group.models.length} 个</span>`).join('')}</div>`;
+}
+
+function renderModelGroups(models, baseUrl) {
+  const groups = groupModelsByKeyword(models);
+  const total = models.length;
+  return `<div class="site-model-groups">${groups.map((group) => {
+    const stateKey = modelGroupStateKey(baseUrl, group.key);
+    const collapsed = state.collapsedModelGroups[stateKey] ?? (total > 40 && group.models.length > 12);
+    return `
+    <div class="site-model-group ${escapeHtml(group.key)} ${collapsed ? 'collapsed' : ''}">
+      <div class="site-model-group-head" data-model-group-toggle="${escapeHtml(group.key)}" title="${collapsed ? '展开该模型分组' : '折叠该模型分组'}">
+        <div class="site-model-group-title">${escapeHtml(group.title)}</div>
+        <div class="site-model-group-actions">
+          <div class="site-model-count">${group.models.length} 个</div>
+          <button type="button" class="model-fold-btn" data-model-group-toggle="${escapeHtml(group.key)}" aria-label="${collapsed ? '展开' : '折叠'} ${escapeHtml(group.title)}">
+            <span class="fold-icon ${collapsed ? '' : 'expanded'}" aria-hidden="true"></span>
+          </button>
+        </div>
+      </div>
+      <div class="site-models">${group.models.map((model) => `<span class="site-model mono">${escapeHtml(model)}</span>`).join('')}</div>
+    </div>`;
+  }).join('')}</div>`;
+}
+
+function setAllModelGroupsCollapsed(baseUrl, collapsed) {
+  for (const group of groupModelsByKeyword((state.siteInfo[baseUrl] || {}).models || [])) {
+    state.collapsedModelGroups[modelGroupStateKey(baseUrl, group.key)] = !!collapsed;
+  }
+  state.collapsedModelPanels[modelPanelStateKey(baseUrl)] = false;
+  renderDetail();
+}
+
+function toggleModelPanel(baseUrl) {
+  const key = modelPanelStateKey(baseUrl);
+  const models = ((state.siteInfo[baseUrl] || {}).models || []);
+  state.collapsedModelPanels[key] = !isModelPanelCollapsed(baseUrl, models);
+  renderDetail();
+}
+
+function toggleModelGroup(baseUrl, groupKey) {
+  const key = modelGroupStateKey(baseUrl, groupKey);
+  state.collapsedModelGroups[key] = !state.collapsedModelGroups[key];
+  renderDetail();
+}
+
 async function refreshSiteModels(baseUrl, automatic = false) {
   const normalized = normalizeBaseUrlInput(baseUrl);
   if (!normalized || state.siteLoading[normalized] === 'models') return;
@@ -2127,13 +2359,16 @@ function renderSiteDetail() {
           <div class="site-section-title">支持的模型</div>
           <div class="small">更新时间：${formatShortTs(info.models_updated_at) || '-'}</div>
         </div>
-        <button type="button" class="secondary" data-refresh-site-models ${loading ? 'disabled' : ''}>${loading === 'models' ? '检测中' : '刷新模型'}</button>
+        <div class="site-model-tools">
+          ${models.length ? `<button type="button" class="secondary" data-model-panel-toggle>${isModelPanelCollapsed(baseUrl, models) ? '展开模型列表' : '收起模型列表'}</button><button type="button" class="secondary" data-model-collapse-all>分组全折叠</button><button type="button" class="secondary" data-model-expand-all>分组全展开</button>` : ''}
+          <button type="button" class="secondary" data-refresh-site-models ${loading ? 'disabled' : ''}>${loading === 'models' ? '检测中' : '刷新模型'}</button>
+        </div>
       </div>
-      <div class="site-models">
+      <div class="site-model-area">
         ${loading === 'info' && !info.models_loaded
           ? '<div class="site-model-empty">正在加载地址信息...</div>'
           : models.length
-            ? models.map((model) => `<span class="site-model mono">${escapeHtml(model)}</span>`).join('')
+            ? `<div class="site-model-panel ${isModelPanelCollapsed(baseUrl, models) ? 'collapsed' : ''}">${renderModelPanelSummary(models)}${renderModelGroups(models, baseUrl)}</div>`
             : `<div class="site-model-empty">${info.models_loaded ? '未发现匹配的 GPT、Claude 或 Gemini 模型。' : '尚未检测模型。'}</div>`}
       </div>
     </div>`}
@@ -2142,6 +2377,18 @@ function renderSiteDetail() {
   if (saveRemarkButton) saveRemarkButton.addEventListener('click', () => saveSiteRemark(baseUrl).catch((e) => notify('bad2', '备注保存失败', e.message || String(e))));
   const refreshModelsButton = el.detailStatus.querySelector('[data-refresh-site-models]');
   if (refreshModelsButton) refreshModelsButton.addEventListener('click', () => refreshSiteModels(baseUrl));
+  const modelPanelButton = el.detailStatus.querySelector('[data-model-panel-toggle]');
+  if (modelPanelButton) modelPanelButton.addEventListener('click', () => toggleModelPanel(baseUrl));
+  const collapseModelsButton = el.detailStatus.querySelector('[data-model-collapse-all]');
+  if (collapseModelsButton) collapseModelsButton.addEventListener('click', () => setAllModelGroupsCollapsed(baseUrl, true));
+  const expandModelsButton = el.detailStatus.querySelector('[data-model-expand-all]');
+  if (expandModelsButton) expandModelsButton.addEventListener('click', () => setAllModelGroupsCollapsed(baseUrl, false));
+  for (const node of el.detailStatus.querySelectorAll('[data-model-group-toggle]')) {
+    node.addEventListener('click', (e) => {
+      e.stopPropagation();
+      toggleModelGroup(baseUrl, node.dataset.modelGroupToggle || '');
+    });
+  }
   const copySiteAddressButton = el.detailStatus.querySelector('[data-copy-site-address]');
   if (copySiteAddressButton) copySiteAddressButton.addEventListener('click', () => copyText(baseUrl, '地址已复制'));
   fitMetricValues();
