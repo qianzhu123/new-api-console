@@ -483,6 +483,16 @@
     .modal-grid .span-2 { grid-column: 1 / -1; }
     .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
     .modal-error { margin-top: 10px; min-height: 18px; color: var(--bad); font-size: 12px; }
+    .auth-box {
+      grid-column: 1 / -1;
+      border: 1px dashed rgba(176,139,47,.45);
+      border-radius: 14px;
+      padding: 11px;
+      background: rgba(255,255,255,.42);
+    }
+    .auth-actions { display:flex; gap:8px; flex-wrap:wrap; margin-top:8px; }
+    .auth-actions button { padding: 7px 10px; font-size: 12px; }
+    .auth-status { margin-top:8px; color: var(--sub); font-size:12px; line-height:1.45; word-break:break-word; }
     .combo-wrap { position: relative; }
     .combo-wrap input {
       height: 38px;
@@ -846,9 +856,19 @@
   <div id="add-modal" class="modal-shell" aria-hidden="true">
     <div class="modal-card">
       <h3 class="modal-title">添加账号</h3>
-      <div class="modal-sub">域名地址可直接输入，也可以选择本地已有地址。</div>
+      <div class="modal-sub">域名地址可直接输入，也可以选择本地已有地址。也可以输入域名后打开授权浏览器自动获取登录信息。</div>
 
       <div class="modal-grid">
+        <div class="auth-box">
+          <label for="m-auth-url">授权添加</label>
+          <input id="m-auth-url" placeholder="输入目标网站地址，例如 https://example.com" autocomplete="off" />
+          <div class="auth-actions">
+            <button id="btn-auth-start" type="button" class="warn">打开网站授权</button>
+            <button id="btn-auth-capture" type="button" class="secondary" disabled>我已登录，开始获取</button>
+            <button id="btn-auth-stop" type="button" class="bad" disabled>停止授权</button>
+          </div>
+          <div id="auth-status" class="auth-status">授权浏览器会使用独立本地目录，不读取你的日常浏览器配置。</div>
+        </div>
         <div class="form-group">
           <label for="m-name">账号名</label>
           <input id="m-name" />
@@ -955,6 +975,7 @@ const state = {
   confirmResolver: null,
   siteInfo: {},
   siteLoading: {},
+  authSessionId: null,
 };
 
 const el = {
@@ -978,6 +999,11 @@ const el = {
   addModal: document.getElementById('add-modal'),
   mName: document.getElementById('m-name'),
   mBaseUrl: document.getElementById('m-base-url'),
+  mAuthUrl: document.getElementById('m-auth-url'),
+  authStatus: document.getElementById('auth-status'),
+  btnAuthStart: document.getElementById('btn-auth-start'),
+  btnAuthCapture: document.getElementById('btn-auth-capture'),
+  btnAuthStop: document.getElementById('btn-auth-stop'),
   mProvider: document.getElementById('m-provider'),
   mProviderList: document.getElementById('m-provider-list'),
   mUser: document.getElementById('m-user'),
@@ -1278,6 +1304,9 @@ function setEditFormDisabled(disabled) {
 function resetModalForm() {
   el.mName.value = '';
   el.mBaseUrl.value = '';
+  el.mAuthUrl.value = '';
+  el.authStatus.textContent = '授权浏览器会使用独立本地目录，不读取你的日常浏览器配置。';
+  setAuthButtons(false);
   el.mProvider.value = 'new-api';
   el.mUser.value = '';
   el.mSession.value = '';
@@ -1286,7 +1315,7 @@ function resetModalForm() {
   el.mStripeSid.value = '';
   el.mEnabled.checked = true;
   el.modalError.textContent = '';
-  clearFieldStates([el.mName, el.mBaseUrl, el.mUser, el.mSession, el.mCookie, el.mStripeMid, el.mStripeSid]);
+  clearFieldStates([el.mName, el.mBaseUrl, el.mAuthUrl, el.mUser, el.mSession, el.mCookie, el.mStripeMid, el.mStripeSid]);
   updateProviderHints('modal');
 }
 
@@ -1303,6 +1332,7 @@ function openAddModal() {
 }
 
 function closeAddModal() {
+  if (state.authSessionId) stopAuthSession().catch(() => {});
   el.addModal.classList.remove('open');
   el.addModal.setAttribute('aria-hidden', 'true');
   el.modalError.textContent = '';
@@ -2499,6 +2529,73 @@ async function saveForm() {
   selectAccount(key);
 }
 
+function setAuthButtons(active, busy = false) {
+  el.btnAuthStart.disabled = !!active || !!busy;
+  el.btnAuthCapture.disabled = !active || !!busy;
+  el.btnAuthStop.disabled = !active || !!busy;
+}
+
+function fillModalFromAuthAccount(account) {
+  if (!account) return;
+  el.mName.value = account.name || '';
+  el.mBaseUrl.value = normalizeBaseUrlInput(account.base_url || '');
+  el.mAuthUrl.value = el.mBaseUrl.value;
+  el.mProvider.value = normalizeProvider(account.provider || 'new-api');
+  el.mUser.value = account.new_api_user || '';
+  el.mSession.value = (account.session || '').replace(/^Bearer\s+/i, '');
+  el.mCookie.value = account.cookie || '';
+  const cookieFields = parseCookieFields(account.cookie || '');
+  el.mStripeMid.value = cookieFields.__stripe_mid || '';
+  el.mStripeSid.value = cookieFields.__stripe_sid || '';
+  updateProviderHints('modal');
+  clearFieldStates([el.mName, el.mBaseUrl, el.mAuthUrl, el.mUser, el.mSession, el.mCookie, el.mStripeMid, el.mStripeSid]);
+}
+
+async function startAuthSession() {
+  const baseUrl = normalizeBaseUrlInput(el.mAuthUrl.value || el.mBaseUrl.value);
+  if (!baseUrl) {
+    el.authStatus.textContent = '请先输入目标网站地址。';
+    notify('warn2', '缺少网站地址', '请先输入目标网站地址。');
+    return;
+  }
+  el.mAuthUrl.value = baseUrl;
+  el.mBaseUrl.value = baseUrl;
+  setAuthButtons(false, true);
+  el.authStatus.textContent = '正在启动授权浏览器...';
+  const data = await api('/api/auth/start', { method: 'POST', body: JSON.stringify({ base_url: baseUrl }) });
+  state.authSessionId = data.auth?.session_id || null;
+  setAuthButtons(!!state.authSessionId);
+  el.authStatus.textContent = '授权浏览器已打开。请在新窗口完成登录，登录成功后点击“我已登录，开始获取”。';
+  notify('ok', '授权浏览器已打开', '请在新打开的浏览器窗口中登录目标网站。');
+}
+
+async function captureAuthSession() {
+  if (!state.authSessionId) return;
+  setAuthButtons(true, true);
+  el.authStatus.textContent = '正在读取登录信息并尝试识别账号类型...';
+  try {
+    const data = await api('/api/auth/capture', { method: 'POST', body: JSON.stringify({ session_id: state.authSessionId }) });
+    fillModalFromAuthAccount(data.account);
+    el.authStatus.textContent = `获取成功：${data.account?.provider || ''} / ${data.account?.name || ''}。请确认后点击“创建账号”。`;
+    notify('ok', '授权信息已获取', '账号信息已自动回填，请确认后创建账号。');
+  } finally {
+    setAuthButtons(true, false);
+  }
+}
+
+async function stopAuthSession() {
+  const sessionId = state.authSessionId;
+  if (!sessionId) return;
+  state.authSessionId = null;
+  setAuthButtons(false, true);
+  try {
+    await api('/api/auth/stop', { method: 'POST', body: JSON.stringify({ session_id: sessionId }) });
+    el.authStatus.textContent = '授权浏览器已关闭。';
+  } finally {
+    setAuthButtons(false, false);
+  }
+}
+
 async function saveNewAccount() {
   const payload = buildPayloadFromInputs({ name: el.mName, baseUrl: el.mBaseUrl, provider: el.mProvider, user: el.mUser, session: el.mSession, cookie: el.mCookie, stripeMid: el.mStripeMid, stripeSid: el.mStripeSid, enabled: el.mEnabled });
   el.mBaseUrl.value = payload.base_url;
@@ -2561,6 +2658,9 @@ document.getElementById('btn-save').addEventListener('click', () => withGlobalBu
 document.getElementById('btn-cancel').addEventListener('click', () => { if (state.selected) fillForm(state.selected); else fillForm(null); });
 document.getElementById('btn-delete').addEventListener('click', () => { if (!state.editingAccountKey) return; withGlobalBusy('删除账号', document.getElementById('btn-delete'), '删除中', () => deleteOne(state.editingAccountKey)).catch(e => log(e.message, 'bad2')); });
 el.btnModalCancel.addEventListener('click', () => closeAddModal());
+el.btnAuthStart.addEventListener('click', () => startAuthSession().catch((e) => { setAuthButtons(false); el.authStatus.textContent = e.message || String(e); notify('bad2', '授权启动失败', e.message || String(e)); }));
+el.btnAuthCapture.addEventListener('click', () => captureAuthSession().catch((e) => { setAuthButtons(!!state.authSessionId); el.authStatus.textContent = e.message || String(e); notify('bad2', '授权获取失败', e.message || String(e)); }));
+el.btnAuthStop.addEventListener('click', () => stopAuthSession().catch((e) => notify('bad2', '停止授权失败', e.message || String(e))));
 el.btnModalSave.addEventListener('click', () => withGlobalBusy('创建账号', el.btnModalSave, '创建中', saveNewAccount).catch(e => {
   el.modalError.textContent = e.message || String(e);
   notify('bad2', '创建失败', e.message || String(e));
@@ -2598,10 +2698,10 @@ function updateProviderHints(scope) {
 }
 el.fProvider.addEventListener('change', () => updateProviderHints('edit'));
 el.mProvider.addEventListener('change', () => updateProviderHints('modal'));
-for (const node of [el.fName, el.fBaseUrl, el.fUser, el.fSession, el.fCookie, el.fStripeMid, el.fStripeSid, el.mName, el.mBaseUrl, el.mUser, el.mSession, el.mCookie, el.mStripeMid, el.mStripeSid]) {
+for (const node of [el.fName, el.fBaseUrl, el.fUser, el.fSession, el.fCookie, el.fStripeMid, el.fStripeSid, el.mName, el.mBaseUrl, el.mAuthUrl, el.mUser, el.mSession, el.mCookie, el.mStripeMid, el.mStripeSid]) {
   node.addEventListener('input', () => {
     setFieldInvalid(node, false);
-    if ([el.mName, el.mBaseUrl, el.mUser, el.mSession, el.mCookie, el.mStripeMid, el.mStripeSid].includes(node)) el.modalError.textContent = '';
+    if ([el.mName, el.mBaseUrl, el.mAuthUrl, el.mUser, el.mSession, el.mCookie, el.mStripeMid, el.mStripeSid].includes(node)) el.modalError.textContent = '';
   });
 }
 el.tokenModalName.addEventListener('input', () => {
@@ -2622,6 +2722,7 @@ document.addEventListener('mousedown', (e) => {
 });
 bindBaseUrlNormalizer(el.fBaseUrl);
 bindBaseUrlNormalizer(el.mBaseUrl);
+bindBaseUrlNormalizer(el.mAuthUrl);
 bindProviderCombo(el.fProvider);
 bindProviderCombo(el.mProvider);
 

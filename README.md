@@ -54,6 +54,15 @@ qiandao/
 pip install flask requests
 ```
 
+Optional dependency for the browser authorization helper:
+
+```powershell
+pip install playwright
+python -m playwright install chromium
+```
+
+Without Playwright, the normal account management, sign-in, status check, and token functions still work. Only the "授权添加" browser-assisted account capture feature is unavailable.
+
 2. Prepare `data/session.json`:
 
 ```json
@@ -137,10 +146,12 @@ run_web.bat
 - Row action `检测`: run single-account check.
 - `添加令牌`: create a token after token groups are loaded.
 - `刷新令牌`: force-refresh token groups and token metadata from the remote site.
+- `添加账号` -> `授权添加`: enter a target website URL, open an isolated Playwright browser, log in manually, then capture supported login information and auto-fill the add-account form.
 
 ## Notes
 
 - All runtime data is stored under `data/` and ignored by git.
+- Browser authorization uses an isolated local profile under `data/auth_browser/`, which is also ignored by git.
 - On startup, old root-level files (`session.json`, `quota_history.json`, `signin_status.json`) are migrated automatically into `data/`.
 - If UI looks stale after update, restart backend and hard refresh browser (`Ctrl+F5`).
 
