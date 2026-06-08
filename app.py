@@ -7,6 +7,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 from typing import Any, Callable
+from urllib.parse import urlparse
 
 import requests
 from flask import Flask, jsonify, render_template, request
@@ -2057,6 +2058,21 @@ def contains_redacted_value(value: Any) -> bool:
     return "[REDACTED]" in str(value)
 
 
+def origin_base_url_from_value(raw: Any) -> str:
+    value = str(raw or "").strip()
+    if not value:
+        return ""
+    if not value.startswith(("http://", "https://")):
+        return normalize_base_url(value)
+    try:
+        parsed = urlparse(value)
+        if parsed.scheme and parsed.netloc:
+            return f"{parsed.scheme}://{parsed.netloc}".rstrip("/")
+    except Exception:
+        pass
+    return normalize_base_url(value)
+
+
 def base_url_from_cookie_domains(cookies: list[dict[str, Any]]) -> str:
     for cookie in cookies:
         domain = str(cookie.get("domain") or "").strip().lstrip(".")
@@ -2067,11 +2083,11 @@ def base_url_from_cookie_domains(cookies: list[dict[str, Any]]) -> str:
 
 def base_url_from_import_json(import_json: Any, cookies: list[dict[str, Any]] | None = None) -> str:
     if isinstance(import_json, dict):
-        for key in ("origin", "page", "url", "href", "currentUrl", "current_url"):
+        for key in ("origin", "base_url", "baseUrl", "site", "siteUrl", "site_url", "page", "url", "href", "currentUrl", "current_url"):
             value = str(import_json.get(key) or "").strip()
             if value:
-                return normalize_base_url(value)
-        for key in ("sessionDetector", "detector", "scan", "scanner"):
+                return origin_base_url_from_value(value)
+        for key in ("sessionDetector", "detector", "scan", "scanner", "qiandaoAccount"):
             nested = import_json.get(key)
             if isinstance(nested, dict):
                 nested_url = base_url_from_import_json(nested, cookies)
@@ -2083,6 +2099,49 @@ def base_url_from_import_json(import_json: Any, cookies: list[dict[str, Any]] | 
     return ""
 
 
+def account_from_qiandao_import_field(import_json: Any, base_url: str) -> dict[str, Any] | None:
+    if not isinstance(import_json, dict):
+        return None
+    raw = import_json.get("qiandaoAccount") or import_json.get("account")
+    if not isinstance(raw, dict):
+        detected = import_json.get("detected")
+        raw = detected.get("account") if isinstance(detected, dict) else None
+    if not isinstance(raw, dict):
+        return None
+
+    provider = str(raw.get("provider") or "").strip().lower()
+    if provider not in ("new-api", "sub2api"):
+        return None
+    session_value = str(raw.get("session") or raw.get("access_token") or "").strip()
+    if not session_value:
+        return None
+    if contains_redacted_value(session_value):
+        raise ValueError("JSON 中的 qiandaoAccount.session 已被 [REDACTED] 脱敏，不能使用；请重新用插件复制未脱敏 JSON。")
+
+    account_base_url = normalize_base_url(str(raw.get("base_url") or raw.get("baseUrl") or base_url or "").strip())
+    if not account_base_url:
+        return None
+    name = str(raw.get("name") or "").strip()
+    new_api_user = str(raw.get("new_api_user") or raw.get("newApiUser") or "").strip()
+    cookie = str(raw.get("cookie") or "").strip()
+    if provider == "new-api" and not name:
+        name = f"new-api-{new_api_user or account_base_url.split('://', 1)[-1]}"
+    if provider == "sub2api" and not name:
+        name = "sub2api-account"
+
+    return {
+        "provider": provider,
+        "base_url": account_base_url,
+        "name": name,
+        "new_api_user": new_api_user,
+        "session": session_value,
+        "cookie": cookie,
+        "identity": raw.get("identity") if isinstance(raw.get("identity"), dict) else {},
+        "payload": {},
+        "notes": ["从浏览器插件 qiandaoAccount 字段直接导入"],
+    }
+
+
 def build_auth_account_from_import_json(import_json: Any, fallback_base_url: str = "") -> tuple[dict[str, Any], list[str]]:
     if not isinstance(import_json, (dict, list)):
         raise ValueError("请粘贴完整 JSON 对象，或 Cookie Editor 导出的 Cookie JSON 数组")
@@ -2092,6 +2151,11 @@ def build_auth_account_from_import_json(import_json: Any, fallback_base_url: str
         base_url = normalize_base_url(fallback_base_url)
     if not base_url:
         raise ValueError("JSON 中缺少 origin/page/url，且 Cookie 中没有 domain，无法识别域名地址")
+
+    direct_account = account_from_qiandao_import_field(import_json, base_url)
+    if direct_account:
+        return direct_account, list(direct_account.get("notes") or [])
+
     storage = json_import_storage_items(import_json if isinstance(import_json, dict) else {})
     notes: list[str] = []
     token = find_auth_token_from_storage(storage)

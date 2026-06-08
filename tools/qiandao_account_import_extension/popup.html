@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <title>qiandao 导入</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <header>
+    <div class="title">qiandao 账号导入助手</div>
+    <div class="subtitle">仅兼容 new-api / sub2api</div>
+  </header>
+
+  <main>
+    <section class="status" id="status">点击“采集当前页”开始。</section>
+
+    <section class="summary" id="summary" hidden>
+      <div><span>站点</span><b id="siteText">-</b></div>
+      <div><span>识别类型</span><b id="providerText">-</b></div>
+      <div><span>账号</span><b id="nameText">-</b></div>
+      <div><span>用户 ID</span><b id="userIdText">-</b></div>
+      <div><span>会话字段</span><b id="sessionText">-</b></div>
+    </section>
+
+    <div class="actions">
+      <button id="collectBtn" class="primary">采集当前页</button>
+      <button id="copyBtn" disabled>复制导入 JSON</button>
+      <button id="downloadBtn" disabled>下载 JSON</button>
+    </div>
+
+    <textarea id="jsonOutput" spellcheck="false" placeholder="采集结果会显示在这里，可直接复制到 qiandao 的 添加账号 -> JSON 导入添加。"></textarea>
+
+    <details>
+      <summary>使用说明 / 安全说明</summary>
+      <ol>
+        <li>打开已登录的 new-api 或 sub2api 网站页面。</li>
+        <li>点击扩展图标，再点“采集当前页”。</li>
+        <li>确认识别结果后复制 JSON。</li>
+        <li>回到本地 qiandao 页面，粘贴到“JSON 导入添加”。</li>
+      </ol>
+      <p>本扩展会读取当前站点 cookies，包括 HttpOnly cookie，所以可以拿到普通油猴脚本无法读取的 new-api session。请只在自己的账号上使用，不要把导出的 JSON 发给别人。</p>
+    </details>
+  </main>
+
+  <script src="popup.js"></script>
+</body>
+</html>

@@ -140,8 +140,27 @@ run_web.bat
 - `添加令牌`: create a token after token groups are loaded.
 - `刷新令牌`: force-refresh token groups and token metadata from the remote site.
 - `添加账号` -> `JSON 导入添加`: paste a captured JSON or Cookie Editor exported Cookie JSON, then click `从 JSON 解析并回填`. The site URL is read from JSON `origin`/`page`/`url`, or from cookie `domain`; no extra URL field is required.
+- Recommended collector: install the Chrome/Edge extension under `tools/qiandao_account_import_extension`. It reads current-page `localStorage`, current-site cookies through the browser extension cookies API, and tries new-api/sub2api self endpoints to complete missing identity fields. It can export HttpOnly `session` cookies that normal page JavaScript/Tampermonkey cannot read.
 - For `sub2api`, the JSON must contain a complete non-redacted `localStorage.auth_token`; `auth_user` is used to fill the account name.
-- For `new-api`, the JSON can contain user identity plus a complete `session` cookie. If the site stores `session` as an HttpOnly cookie, use Cookie Editor to export cookies: Cookie Editor reads cookies through the browser extension cookies API, so it can export HttpOnly cookies that normal page JavaScript/document.cookie cannot read.
+- For `new-api`, the JSON should contain user identity plus a complete `session` cookie. The extension can produce this directly on the logged-in site.
+
+### Browser extension collector
+
+A local unpacked Chrome/Edge extension is provided at:
+
+```text
+tools/qiandao_account_import_extension
+```
+
+Install it from `chrome://extensions/` or `edge://extensions/` by enabling developer mode and choosing `加载已解压的扩展程序`.
+
+Usage:
+
+```text
+Open logged-in new-api/sub2api site -> click qiandao extension -> 采集当前页 -> 复制导入 JSON -> paste into qiandao JSON import
+```
+
+The extension only targets `new-api` and `sub2api` import fields. It displays the detected site, provider, account name, user ID, and session source, then generates JSON that can be pasted directly into the add-account JSON import box. Exported JSON contains login credentials (`session` or Bearer token), so keep it private.
 
 ## Notes
 
