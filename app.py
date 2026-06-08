@@ -1859,8 +1859,11 @@ def build_auth_account(base_url: str, cookies: list[dict[str, Any]], storage: di
             user_id = str(identity.get("id") or user_id or "").strip()
             display = str(identity.get("email") or identity.get("username") or identity.get("display_name") or user_id or "").strip()
             return {"provider": "new-api", "base_url": base_url, "name": display or f"new-api-{user_id or 'account'}", "new_api_user": user_id, "session": session_value, "cookie": "", "identity": identity, "payload": payload, "notes": notes}
-        if not verify_remote and user_id:
-            return {"provider": "new-api", "base_url": base_url, "name": f"new-api-{user_id}", "new_api_user": user_id, "session": session_value, "cookie": "", "identity": {}, "payload": {}, "notes": notes}
+        if not verify_remote:
+            host = base_url.split("://", 1)[-1].split("/", 1)[0]
+            fallback_name = f"new-api-{user_id}" if user_id else f"new-api-{host or 'account'}"
+            notes.append("已读取 new-api session Cookie；JSON 中没有用户身份信息时，需要手动确认或补充 new_api_user。")
+            return {"provider": "new-api", "base_url": base_url, "name": fallback_name, "new_api_user": user_id, "session": session_value, "cookie": "", "identity": identity or {}, "payload": {}, "notes": notes}
         notes.append(error or "new-api self endpoint did not return identity")
 
     if token:
@@ -1945,21 +1948,104 @@ def json_import_storage_items(import_json: dict[str, Any]) -> dict[str, Any]:
     return storage
 
 
-def json_import_cookies(import_json: dict[str, Any]) -> list[dict[str, Any]]:
-    visible = import_json.get("visibleCookies") if isinstance(import_json, dict) else {}
-    raw_cookies = visible.get("cookies") if isinstance(visible, dict) else []
+def json_import_cookie_sources(import_json: Any) -> list[Any]:
+    if isinstance(import_json, list):
+        return [import_json]
+    if not isinstance(import_json, dict):
+        return []
+    sources: list[Any] = []
+    # Cookie Editor common exports: a top-level list, {cookies:[...]}, or browser/site export containers.
+    # Also supports enhanced userscript export fields:
+    # cookieEditorCookies / httpOnlyCookies / importCookies / cookieHeader / rawCookie.
+    for key in (
+        "cookies",
+        "cookie",
+        "cookieStore",
+        "cookie_store",
+        "cookieEditorCookies",
+        "httpOnlyCookies",
+        "importCookies",
+        "manualCookies",
+        "cookieHeader",
+        "rawCookie",
+    ):
+        value = import_json.get(key)
+        if isinstance(value, (list, str, dict)):
+            sources.append(value)
+    visible = import_json.get("visibleCookies")
+    if isinstance(visible, dict) and isinstance(visible.get("cookies"), list):
+        sources.append(visible.get("cookies"))
+    # Some extensions export per-domain maps or nested stores.
+    for key in ("domains", "sites", "store", "stores"):
+        value = import_json.get(key)
+        if isinstance(value, dict):
+            for nested in value.values():
+                if isinstance(nested, dict):
+                    for nested_key in ("cookies", "cookie"):
+                        if isinstance(nested.get(nested_key), (list, str, dict)):
+                            sources.append(nested.get(nested_key))
+                elif isinstance(nested, list):
+                    sources.append(nested)
+    # Combined import format: {sessionDetector:{...}, cookieEditor:[...]}
+    for key in ("sessionDetector", "detector", "scan", "scanner", "cookieEditor"):
+        nested = import_json.get(key)
+        if isinstance(nested, (dict, list)):
+            sources.extend(json_import_cookie_sources(nested))
+    return sources
+
+
+def cookie_item_value(item: dict[str, Any]) -> tuple[str, str]:
+    name = str(item.get("name") or item.get("key") or "").strip()
+    value = item.get("value")
+    if value is None:
+        value = item.get("val")
+    if value is None:
+        value = item.get("content")
+    if value is None:
+        value = item.get("valuePreview")
+    return name, str(value or "").strip()
+
+
+def json_import_cookies(import_json: Any) -> list[dict[str, Any]]:
     cookies: list[dict[str, Any]] = []
-    if isinstance(raw_cookies, list):
-        for item in raw_cookies:
-            if not isinstance(item, dict):
-                continue
-            name = str(item.get("name") or "").strip()
-            value = item.get("value")
-            if value is None:
-                value = item.get("valuePreview")
-            value = str(value or "").strip()
-            if name and value:
-                cookies.append({"name": name, "value": value})
+    seen: set[tuple[str, str]] = set()
+
+    def add_cookie(name: str, value: str, extra: dict[str, Any] | None = None) -> None:
+        name = str(name or "").strip()
+        value = str(value or "").strip()
+        if not name or not value:
+            return
+        key = (name, value)
+        if key in seen:
+            return
+        seen.add(key)
+        row = {"name": name, "value": value}
+        if isinstance(extra, dict):
+            for extra_key in ("domain", "path", "httpOnly", "secure", "sameSite", "expirationDate", "expires"):
+                if extra_key in extra:
+                    row[extra_key] = extra.get(extra_key)
+        cookies.append(row)
+
+    for source in json_import_cookie_sources(import_json):
+        if isinstance(source, str):
+            for item in cookie_header_to_list(source):
+                add_cookie(str(item.get("name") or ""), str(item.get("value") or ""))
+            continue
+        if isinstance(source, dict):
+            for key, value in source.items():
+                if isinstance(value, (str, int, float)):
+                    add_cookie(str(key), str(value))
+            source = [source]
+        if isinstance(source, list):
+            for item in source:
+                if isinstance(item, str):
+                    for parsed in cookie_header_to_list(item):
+                        add_cookie(str(parsed.get("name") or ""), str(parsed.get("value") or ""))
+                    continue
+                if not isinstance(item, dict):
+                    continue
+                name, value = cookie_item_value(item)
+                add_cookie(name, value, item)
     return cookies
 
 
@@ -1971,14 +2057,42 @@ def contains_redacted_value(value: Any) -> bool:
     return "[REDACTED]" in str(value)
 
 
-def build_auth_account_from_import_json(import_json: dict[str, Any], fallback_base_url: str = "") -> tuple[dict[str, Any], list[str]]:
-    if not isinstance(import_json, dict):
-        raise ValueError("请粘贴完整 JSON 对象")
-    base_url = normalize_base_url(str(import_json.get("origin") or import_json.get("page") or fallback_base_url or ""))
-    if not base_url:
-        raise ValueError("JSON 中缺少 origin/page，无法识别域名地址")
-    storage = json_import_storage_items(import_json)
+def base_url_from_cookie_domains(cookies: list[dict[str, Any]]) -> str:
+    for cookie in cookies:
+        domain = str(cookie.get("domain") or "").strip().lstrip(".")
+        if domain:
+            return normalize_base_url(domain)
+    return ""
+
+
+def base_url_from_import_json(import_json: Any, cookies: list[dict[str, Any]] | None = None) -> str:
+    if isinstance(import_json, dict):
+        for key in ("origin", "page", "url", "href", "currentUrl", "current_url"):
+            value = str(import_json.get(key) or "").strip()
+            if value:
+                return normalize_base_url(value)
+        for key in ("sessionDetector", "detector", "scan", "scanner"):
+            nested = import_json.get(key)
+            if isinstance(nested, dict):
+                nested_url = base_url_from_import_json(nested, cookies)
+                if nested_url:
+                    return nested_url
+    cookie_url = base_url_from_cookie_domains(cookies or [])
+    if cookie_url:
+        return cookie_url
+    return ""
+
+
+def build_auth_account_from_import_json(import_json: Any, fallback_base_url: str = "") -> tuple[dict[str, Any], list[str]]:
+    if not isinstance(import_json, (dict, list)):
+        raise ValueError("请粘贴完整 JSON 对象，或 Cookie Editor 导出的 Cookie JSON 数组")
     cookies = json_import_cookies(import_json)
+    base_url = base_url_from_import_json(import_json, cookies)
+    if not base_url and fallback_base_url:
+        base_url = normalize_base_url(fallback_base_url)
+    if not base_url:
+        raise ValueError("JSON 中缺少 origin/page/url，且 Cookie 中没有 domain，无法识别域名地址")
+    storage = json_import_storage_items(import_json if isinstance(import_json, dict) else {})
     notes: list[str] = []
     token = find_auth_token_from_storage(storage)
     session_value = cookie_value(cookies, "session")
@@ -2490,8 +2604,7 @@ def auth_import_json():
             import_json = raw
         else:
             raise ValueError("请粘贴 JSON 文本")
-        fallback_base_url = str(payload.get("base_url") or "") if isinstance(payload, dict) else ""
-        account, notes = build_auth_account_from_import_json(import_json, fallback_base_url=fallback_base_url)
+        account, notes = build_auth_account_from_import_json(import_json)
         return jsonify({"ok": True, "account": account, "notes": notes})
     except Exception as exc:
         return jsonify({"ok": False, "error": str(exc)}), 400

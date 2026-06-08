@@ -139,14 +139,13 @@ run_web.bat
 - Row action `检测`: run single-account check.
 - `添加令牌`: create a token after token groups are loaded.
 - `刷新令牌`: force-refresh token groups and token metadata from the remote site.
-- `添加账号` -> `JSON 导入添加`: choose or enter a target website URL from the domain list, paste the captured JSON, then click `从 JSON 解析并回填`.
+- `添加账号` -> `JSON 导入添加`: paste a captured JSON or Cookie Editor exported Cookie JSON, then click `从 JSON 解析并回填`. The site URL is read from JSON `origin`/`page`/`url`, or from cookie `domain`; no extra URL field is required.
 - For `sub2api`, the JSON must contain a complete non-redacted `localStorage.auth_token`; `auth_user` is used to fill the account name.
-- For `new-api`, the JSON must contain user identity plus a complete `session` cookie. If the site stores `session` as an HttpOnly cookie, normal page-side JSON cannot read it, so you must manually fill `session` or export cookies with a tool that can read HttpOnly cookies.
+- For `new-api`, the JSON can contain user identity plus a complete `session` cookie. If the site stores `session` as an HttpOnly cookie, use Cookie Editor to export cookies: Cookie Editor reads cookies through the browser extension cookies API, so it can export HttpOnly cookies that normal page JavaScript/document.cookie cannot read.
 
 ## Notes
 
 - All runtime data is stored under `data/` and ignored by git.
-- The JSON import website list is built from saved account domain addresses, saved site info entries, and the default domain address.
 - On startup, old root-level files (`session.json`, `quota_history.json`, `signin_status.json`) are migrated automatically into `data/`.
 - If UI looks stale after update, restart backend and hard refresh browser (`Ctrl+F5`).
 
