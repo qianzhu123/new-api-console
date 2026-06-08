@@ -22,6 +22,7 @@ HISTORY_PATH = DATA_DIR / "quota_history.json"
 SIGNIN_PATH = DATA_DIR / "signin_status.json"
 STATUS_CACHE_PATH = DATA_DIR / "status_cache.json"
 TOKEN_CACHE_PATH = DATA_DIR / "token_cache.json"
+SITE_INFO_PATH = DATA_DIR / "site_info.json"
 DEFAULT_BASE_URL = "https://www.new-api.com"
 BASE_URL_ENV_KEY = "NEW_API_BASE_URL"
 CHECKIN_PATH = "/api/user/checkin"
@@ -29,6 +30,10 @@ SELF_PATH = "/api/user/self"
 STATUS_PATH = "/api/status"
 TOKEN_GROUPS_PATH = "/api/user/self/groups"
 TOKEN_PATH = "/api/token/"
+MODELS_PATH = "/api/user/models"
+SUB2API_SELF_PATH = "/api/v1/auth/me"
+SUB2API_GROUPS_PATH = "/api/v1/groups/available"
+SUB2API_KEYS_PATH = "/api/v1/keys"
 TIMEOUT_SECONDS = 20
 def parse_positive_int_env(name: str, default: int) -> int:
     try:
@@ -117,6 +122,8 @@ def ensure_data_layout() -> None:
         os.replace(legacy_path, new_path)
     if not TOKEN_CACHE_PATH.exists():
         atomic_save_json(TOKEN_CACHE_PATH, {"accounts": {}})
+    if not SITE_INFO_PATH.exists():
+        atomic_save_json(SITE_INFO_PATH, {"sites": {}})
 
 
 def normalize_base_url(raw: str) -> str:
@@ -208,6 +215,7 @@ def validate_account_fields(
     session_value: str,
     api_keys: list[str],
     require_name: bool = True,
+    provider: str = "new-api",
 ) -> None:
     if require_name:
         if not name:
@@ -226,16 +234,18 @@ def validate_account_fields(
     if not base_url.startswith(("http://", "https://")):
         raise ValueError("base_url must start with http:// or https://")
 
-    if not new_api_user:
-        raise ValueError("new_api_user is required")
-    if not new_api_user.isdigit():
+    if provider not in ("new-api", "sub2api"):
+        raise ValueError("provider must be new-api or sub2api")
+
+    if provider == "new-api" and new_api_user and not new_api_user.isdigit():
         raise ValueError("new_api_user must be numeric")
 
     if not session_value:
         raise ValueError("session is required")
     if any(ch.isspace() for ch in session_value):
         raise ValueError("session must not contain whitespace")
-    if len(session_value) < 20:
+    min_session_len = 20 if provider == "new-api" else 30
+    if len(session_value) < min_session_len:
         raise ValueError("session looks too short")
 
     for key in api_keys:
@@ -247,6 +257,7 @@ def validate_account_fields(
 
 def normalize_account(account: dict[str, Any], fallback_base_url: str | None = None) -> dict[str, Any]:
     normalized = dict(account)
+    normalized.pop("remark", None)
     account_base = str(normalized.get("base_url") or "").strip()
     if account_base:
         normalized["base_url"] = normalize_base_url(account_base)
@@ -256,8 +267,13 @@ def normalize_account(account: dict[str, Any], fallback_base_url: str | None = N
         normalized["base_url"] = DEFAULT_BASE_URL
     normalized["name"] = str(normalized.get("name") or "").strip()
     normalized["enabled"] = bool(normalized.get("enabled", True))
+    provider = str(normalized.get("provider") or "new-api").strip().lower()
+    if provider not in ("new-api", "sub2api"):
+        provider = "new-api"
+    normalized["provider"] = provider
     normalized["new_api_user"] = str(normalized.get("new_api_user") or "").strip()
-    normalized["session"] = str(normalized.get("session") or "").strip()
+    normalized["session"] = str(normalized.get("session") or normalized.get("access_token") or "").strip()
+    normalized["cookie"] = str(normalized.get("cookie") or "").strip()
     normalized["api_keys"] = parse_api_keys(normalized.get("api_keys"))
     return normalized
 
@@ -638,10 +654,17 @@ def get_account_by_index(account_index: int) -> dict[str, Any] | None:
     return accounts[idx]
 
 
+def account_provider(account: dict[str, Any]) -> str:
+    provider = str(account.get("provider") or "new-api").strip().lower()
+    return provider if provider in ("new-api", "sub2api") else "new-api"
+
+
 def token_cache_key(account: dict[str, Any]) -> str:
     base_url = normalize_base_url(str(account.get("base_url") or get_base_url()))
+    provider = account_provider(account)
     user_id = str(account.get("new_api_user") or "").strip()
-    return f"{base_url}|{user_id}"
+    session_hint = str(account.get("session") or "").strip()[:12] if provider == "sub2api" else user_id
+    return f"{provider}|{base_url}|{session_hint}"
 
 
 def load_token_cache() -> dict[str, Any]:
@@ -740,10 +763,151 @@ def cache_delete_token(account: dict[str, Any], token_id: int) -> None:
     update_token_cache(account, tokens=[item for item in tokens if str(item.get("id")) != str(token_id)])
 
 
+def load_site_info() -> dict[str, Any]:
+    ensure_data_layout()
+    if not SITE_INFO_PATH.exists():
+        return {"sites": {}}
+    try:
+        with SITE_INFO_PATH.open("r", encoding="utf-8") as f:
+            data = json.load(f)
+    except Exception:
+        return {"sites": {}}
+    if not isinstance(data, dict):
+        return {"sites": {}}
+    sites = data.get("sites")
+    if not isinstance(sites, dict):
+        data["sites"] = {}
+    return data
+
+
+def get_site_info(base_url: str) -> dict[str, Any]:
+    normalized_url = normalize_base_url(base_url)
+    store = load_site_info()
+    entry = store.get("sites", {}).get(normalized_url)
+    if not isinstance(entry, dict):
+        entry = {}
+    models = entry.get("models")
+    return {
+        "base_url": normalized_url,
+        "remark": str(entry.get("remark") or ""),
+        "models": [str(model) for model in models if str(model).strip()] if isinstance(models, list) else [],
+        "models_loaded": isinstance(models, list),
+        "models_updated_at": str(entry.get("models_updated_at") or ""),
+    }
+
+
+def update_site_info(
+    base_url: str,
+    *,
+    remark: str | None = None,
+    models: list[str] | None = None,
+) -> dict[str, Any]:
+    normalized_url = normalize_base_url(base_url)
+    with config_lock:
+        store = load_site_info()
+        sites = store.setdefault("sites", {})
+        if not isinstance(sites, dict):
+            sites = {}
+            store["sites"] = sites
+        entry = sites.get(normalized_url)
+        if not isinstance(entry, dict):
+            entry = {}
+            sites[normalized_url] = entry
+        if remark is not None:
+            entry["remark"] = remark
+            entry["remark_updated_at"] = now_ts()
+        if models is not None:
+            entry["models"] = models
+            entry["models_updated_at"] = now_ts()
+        entry["updated_at"] = now_ts()
+        atomic_save_json(SITE_INFO_PATH, store)
+    return get_site_info(normalized_url)
+
+
+def first_account_for_site(base_url: str) -> dict[str, Any] | None:
+    normalized_url = normalize_base_url(base_url)
+    cfg = load_config()
+    for account in cfg.get("accounts", []):
+        account_url = normalize_base_url(str(account.get("base_url") or get_base_url()))
+        if account_url == normalized_url:
+            return account
+    return None
+
+
+def filter_supported_models(payload: dict[str, Any]) -> list[str]:
+    data = payload.get("data")
+    if not isinstance(data, list):
+        return []
+    keywords = ("gpt-image-2", "gpt", "claude", "gemini")
+    models: list[str] = []
+    for item in data:
+        model = str(item or "").strip()
+        if not model or not any(keyword in model.lower() for keyword in keywords):
+            continue
+        if model not in models:
+            models.append(model)
+    return models
+
+
+def fetch_site_models(base_url: str) -> tuple[list[str], dict[str, Any], dict[str, Any]]:
+    normalized_url = normalize_base_url(base_url)
+    account = first_account_for_site(normalized_url)
+    if account is None:
+        raise ValueError("site has no account")
+    session_value = str(account.get("session") or "").strip()
+    user_id = str(account.get("new_api_user") or "").strip()
+    if not session_value:
+        raise ValueError("first account is missing session")
+    if not user_id:
+        raise ValueError("first account is missing new_api_user")
+    headers = build_headers(
+        user_id,
+        referer=f"{normalized_url}/keys",
+        base_url=normalized_url,
+    )
+    url = normalized_url.rstrip("/") + "/" + MODELS_PATH.lstrip("/")
+    resp = requests.get(
+        url,
+        cookies={"session": session_value},
+        headers=headers,
+        timeout=TIMEOUT_SECONDS,
+    )
+    payload = parse_api_payload(resp)
+    error = api_payload_error(payload, resp)
+    if error:
+        raise RuntimeError(error)
+    models = filter_supported_models(payload)
+    info = update_site_info(normalized_url, models=models)
+    return models, info, payload
+
+
+def parse_cookie_header(raw_cookie: str) -> dict[str, str]:
+    cookies: dict[str, str] = {}
+    for part in str(raw_cookie or "").split(";"):
+        if "=" not in part:
+            continue
+        key, value = part.split("=", 1)
+        key = key.strip()
+        if key:
+            cookies[key] = value.strip()
+    return cookies
+
+
 def build_token_headers(account: dict[str, Any]) -> tuple[str, str, dict[str, str], dict[str, str]]:
     session_value = str(account.get("session") or "").strip()
     user_id = str(account.get("new_api_user") or "").strip()
     base_url = normalize_base_url(str(account.get("base_url") or get_base_url()))
+    if account_provider(account) == "sub2api":
+        headers = dict(DEFAULT_HEADERS)
+        headers.update({
+            "authorization": f"Bearer {session_value}",
+            "origin": base_url,
+            "referer": f"{base_url}/keys",
+            "dnt": "1",
+            "pragma": "no-cache",
+            "cache-control": "no-store",
+        })
+        return base_url, session_value, headers, parse_cookie_header(str(account.get("cookie") or ""))
     headers = build_headers(
         user_id,
         referer=f"{base_url}/console/token",
@@ -768,7 +932,7 @@ def parse_api_payload(resp: requests.Response) -> dict[str, Any]:
 
 
 def api_payload_error(payload: dict[str, Any], resp: requests.Response) -> str | None:
-    if resp.ok and payload.get("success") is not False:
+    if resp.ok and payload.get("success") is not False and payload.get("code") not in (-1, 401, 403):
         return None
     message = str(payload.get("message") or payload.get("error") or "").strip()
     return message or f"http {resp.status_code}"
@@ -776,16 +940,27 @@ def api_payload_error(payload: dict[str, Any], resp: requests.Response) -> str |
 
 def normalize_token_groups(payload: dict[str, Any]) -> list[dict[str, Any]]:
     data = payload.get("data")
+    groups: list[dict[str, Any]] = []
+    if isinstance(data, list):
+        for item in data:
+            if not isinstance(item, dict):
+                continue
+            group_id = item.get("id")
+            groups.append({
+                "id": str(group_id),
+                "desc": str(item.get("name") or item.get("description") or group_id or ""),
+                "ratio": item.get("rate_multiplier"),
+            })
+        return groups
     if not isinstance(data, dict):
         return []
-    groups: list[dict[str, Any]] = []
     for group_id, item in data.items():
         if not isinstance(item, dict):
             continue
         groups.append({
             "id": str(group_id),
-            "desc": str(item.get("desc") or ""),
-            "ratio": item.get("ratio"),
+            "desc": str(item.get("desc") or item.get("name") or item.get("description") or ""),
+            "ratio": item.get("ratio") or item.get("rate_multiplier"),
         })
     return groups
 
@@ -806,11 +981,14 @@ def normalize_tokens(payload: dict[str, Any]) -> list[dict[str, Any]]:
     tokens = []
     for item in token_records_from_payload(payload):
         token_key = item.get("key") or item.get("token") or item.get("value")
+        group = item.get("group")
+        if isinstance(group, dict):
+            group = group.get("name") or group.get("id")
         tokens.append({
             "id": item.get("id"),
             "name": str(item.get("name") or ""),
             "key": format_token_key(token_key),
-            "group": str(item.get("group") or ""),
+            "group": str(group or item.get("group_id") or ""),
         })
     return tokens
 
@@ -818,11 +996,14 @@ def normalize_tokens(payload: dict[str, Any]) -> list[dict[str, Any]]:
 def normalize_created_token(payload: dict[str, Any], name: str, group: str) -> dict[str, Any]:
     data = payload.get("data") if isinstance(payload.get("data"), dict) else {}
     token_key = data.get("key") or data.get("token") or data.get("value") or payload.get("key") or payload.get("token")
+    created_group = data.get("group")
+    if isinstance(created_group, dict):
+        created_group = created_group.get("name") or created_group.get("id")
     return {
         "id": data.get("id") or payload.get("id"),
         "name": str(data.get("name") or name),
         "key": format_token_key(token_key),
-        "group": str(data.get("group") or group),
+        "group": str(created_group or data.get("group_id") or group),
     }
 
 
@@ -856,7 +1037,8 @@ def fetch_remote_token_groups(account: dict[str, Any]) -> tuple[list[dict[str, A
     base_url, session_value, headers, cookies = build_token_headers(account)
     if not session_value:
         raise ValueError("missing session")
-    url = base_url.rstrip("/") + "/" + TOKEN_GROUPS_PATH.lstrip("/")
+    path = SUB2API_GROUPS_PATH if account_provider(account) == "sub2api" else TOKEN_GROUPS_PATH
+    url = base_url.rstrip("/") + "/" + path.lstrip("/") + ("?timezone=Asia%2FShanghai" if account_provider(account) == "sub2api" else "")
     resp = requests.get(url, cookies=cookies, headers=headers, timeout=TIMEOUT_SECONDS)
     payload = parse_api_payload(resp)
     error = api_payload_error(payload, resp)
@@ -871,7 +1053,10 @@ def fetch_remote_tokens(account: dict[str, Any]) -> tuple[list[dict[str, Any]], 
     base_url, session_value, headers, cookies = build_token_headers(account)
     if not session_value:
         raise ValueError("missing session")
-    url = base_url.rstrip("/") + "/" + TOKEN_PATH.lstrip("/") + "?p=1&size=50"
+    if account_provider(account) == "sub2api":
+        url = base_url.rstrip("/") + "/" + SUB2API_KEYS_PATH.lstrip("/") + "?page=1&page_size=50&sort_by=created_at&sort_order=desc&timezone=Asia%2FShanghai"
+    else:
+        url = base_url.rstrip("/") + "/" + TOKEN_PATH.lstrip("/") + "?p=1&size=50"
     resp = requests.get(url, cookies=cookies, headers=headers, timeout=TIMEOUT_SECONDS)
     payload = parse_api_payload(resp)
     error = api_payload_error(payload, resp)
@@ -964,6 +1149,26 @@ def request_self_with_retry(session_value: str, user_id: str, base_url: str) -> 
             if idx < attempts:
                 time.sleep(0.5 * idx)
 
+    return None, {}, last_error or "network error"
+
+
+def request_sub2api_self_with_retry(account: dict[str, Any]) -> tuple[requests.Response | None, dict[str, Any], str | None]:
+    base_url, session_value, headers, cookies = build_token_headers(account)
+    url = base_url.rstrip("/") + "/" + SUB2API_SELF_PATH.lstrip("/") + "?timezone=Asia%2FShanghai"
+    attempts = 3
+    last_error = None
+    for idx in range(1, attempts + 1):
+        try:
+            resp = requests.get(url, cookies=cookies, headers=headers, timeout=TIMEOUT_SECONDS)
+            try:
+                payload = resp.json()
+            except ValueError:
+                payload = {"raw": resp.text[:500]}
+            return resp, payload, None
+        except requests.RequestException as exc:
+            last_error = f"network error: {exc}"
+            if idx < attempts:
+                time.sleep(0.5 * idx)
     return None, {}, last_error or "network error"
 
 
@@ -1095,6 +1300,16 @@ def classify_checkin(account: dict[str, Any]) -> dict[str, Any]:
     session_value = (account.get("session") or "").strip()
     user_id = (account.get("new_api_user") or "").strip()
     base_url = normalize_base_url(str(account.get("base_url") or get_base_url()))
+    provider = account_provider(account)
+
+    if provider == "sub2api":
+        return {
+            "account": name,
+            "account_index": account_index,
+            "state": "UNSUPPORTED",
+            "message": "sub2api 暂未配置签到接口",
+            "timestamp": now_ts(),
+        }
 
     if cached_checkin_disabled(account_index):
         return {
@@ -1180,6 +1395,7 @@ def check_status(account: dict[str, Any], system_status: dict[str, Any] | None =
     session_value = (account.get("session") or "").strip()
     user_id = (account.get("new_api_user") or "").strip()
     base_url = normalize_base_url(str(account.get("base_url") or get_base_url()))
+    provider = account_provider(account)
 
     if not session_value:
         return {
@@ -1192,7 +1408,7 @@ def check_status(account: dict[str, Any], system_status: dict[str, Any] | None =
             "system_status": system_status,
             "timestamp": now_ts(),
         }
-    if not user_id:
+    if provider == "new-api" and not user_id:
         return {
             "account": name,
             "status_state": "INVALID_SESSION",
@@ -1202,7 +1418,10 @@ def check_status(account: dict[str, Any], system_status: dict[str, Any] | None =
             "system_status": system_status,
             "timestamp": now_ts(),
         }
-    resp, payload, network_error = request_self_with_retry(session_value, user_id, base_url=base_url)
+    if provider == "sub2api":
+        resp, payload, network_error = request_sub2api_self_with_retry(account)
+    else:
+        resp, payload, network_error = request_self_with_retry(session_value, user_id, base_url=base_url)
     if network_error:
         return {
             "account": name,
@@ -1255,9 +1474,23 @@ def check_status(account: dict[str, Any], system_status: dict[str, Any] | None =
             "timestamp": now_ts(),
         }
 
-    if isinstance(payload, dict) and payload.get("success") is True and isinstance(payload.get("data"), dict):
+    payload_ok = isinstance(payload, dict) and (payload.get("success") is True or payload.get("code") == 0)
+    if payload_ok and isinstance(payload.get("data"), dict):
         data = payload.get("data") if isinstance(payload.get("data"), dict) else {}
         quota = data.get("quota")
+        if provider == "sub2api" and not isinstance(quota, (int, float)):
+            balance = data.get("balance")
+            if isinstance(balance, (int, float)):
+                quota = balance
+        if provider == "sub2api":
+            base_system_status = system_status if isinstance(system_status, dict) else {}
+            system_status = {
+                **base_system_status,
+                "ok": True,
+                "quota_per_unit": 1,
+                "quota_display_type": "USD",
+                "checkin_enabled": False,
+            }
         quota_delta = None
         quota_source = "live"
         if isinstance(quota, (int, float)):
@@ -1304,7 +1537,7 @@ def check_status(account: dict[str, Any], system_status: dict[str, Any] | None =
             "identity": {
                 "id": data.get("id"),
                 "username": data.get("username"),
-                "display_name": data.get("display_name"),
+                "display_name": data.get("display_name") or data.get("username"),
                 "email": data.get("email"),
                 "status": data.get("status"),
                 "group": data.get("group"),
@@ -1398,8 +1631,10 @@ def to_public_account(account: dict[str, Any], signin_status: str = "未签到",
         "name": account.get("name", ""),
         "enabled": bool(account.get("enabled", True)),
         "base_url": normalize_base_url(str(account.get("base_url") or get_base_url())),
+        "provider": account_provider(account),
         "new_api_user": str(account.get("new_api_user", "")),
         "session": str(account.get("session", "")),
+        "cookie": str(account.get("cookie", "")),
         "api_keys": api_keys,
         "api_keys_masked": [mask_api_key(k) for k in api_keys],
         "signin_status": public_signin_status,
@@ -1411,8 +1646,12 @@ def parse_account_payload(data: dict[str, Any], require_name: bool = True) -> di
     name = str(data.get("name") or "").strip()
     raw_base_url = str(data.get("base_url") or "").strip()
     base_url = normalize_base_url(raw_base_url)
+    provider = str(data.get("provider") or "new-api").strip().lower()
+    if provider not in ("new-api", "sub2api"):
+        provider = "new-api"
     new_api_user = str(data.get("new_api_user") or "").strip()
     session_value = str(data.get("session") or "").strip()
+    cookie = str(data.get("cookie") or "").strip()
     enabled = bool(data.get("enabled", True))
     api_keys = parse_api_keys(data.get("api_keys"))
 
@@ -1423,15 +1662,18 @@ def parse_account_payload(data: dict[str, Any], require_name: bool = True) -> di
         session_value=session_value,
         api_keys=api_keys,
         require_name=require_name,
+        provider=provider,
     )
 
     return {
         "account_index": int(data.get("account_index", 0) or 0),
         "name": name,
         "enabled": enabled,
+        "provider": provider,
         "base_url": base_url,
         "new_api_user": new_api_user,
         "session": session_value,
+        "cookie": cookie,
         "api_keys": api_keys,
     }
 
@@ -1625,20 +1867,26 @@ def checkin_all():
     for base_url in unsupported_base_urls:
         set_base_url_signin_status_today(all_accounts, base_url, "不可签到")
 
+    checkin_accounts: list[dict[str, Any]] = []
+    skipped_signed = 0
+    skipped_unsupported = 0
+    for account in accounts:
+        account_index = int(account.get("account_index", 0) or 0)
+        runtime_key = str(account_index) if account_index > 0 else str(account.get("name") or "")
+        account_base_url = normalize_base_url(str(account.get("base_url") or get_base_url()))
+        signin_status = get_signin_status_today(runtime_key)
+        if account_base_url in unsupported_base_urls or signin_status == "不可签到":
+            skipped_unsupported += 1
+            continue
+        if signin_status != "未签到":
+            skipped_signed += 1
+            continue
+        checkin_accounts.append(account)
+
     def checkin_account(acc: dict[str, Any]) -> dict[str, Any]:
         account_name = str(acc.get("name") or "")
         account_index = int(acc.get("account_index", 0) or 0)
         runtime_key = str(account_index) if account_index > 0 else account_name
-        account_base_url = normalize_base_url(str(acc.get("base_url") or get_base_url()))
-        if account_base_url in unsupported_base_urls:
-            return {
-                "account": account_name,
-                "account_index": account_index,
-                "state": "UNSUPPORTED",
-                "message": "该网站不可签到，已跳过",
-                "skipped": True,
-                "timestamp": now_ts(),
-            }
         result = classify_checkin(acc)
         result["account_index"] = account_index
         if result.get("state") in ("SIGNED_NOW", "ALREADY_SIGNED"):
@@ -1649,15 +1897,23 @@ def checkin_all():
             set_signin_status_today(runtime_key, "未签到")
         return result
 
-    results = run_batch_parallel(accounts, checkin_account)
+    results = run_batch_parallel(checkin_accounts, checkin_account)
     unsupported_urls = unsupported_base_urls | {
         normalize_base_url(str(account.get("base_url") or get_base_url()))
-        for account, result in zip(accounts, results)
+        for account, result in zip(checkin_accounts, results)
         if result.get("state") == "UNSUPPORTED"
     }
     for base_url in unsupported_urls:
         set_base_url_signin_status_today(all_accounts, base_url, "不可签到")
-    return jsonify({"ok": True, "results": results})
+    return jsonify(
+        {
+            "ok": True,
+            "results": results,
+            "eligible_count": len(checkin_accounts),
+            "skipped_signed": skipped_signed,
+            "skipped_unsupported": skipped_unsupported,
+        }
+    )
 
 
 @app.route("/api/accounts/<int:account_index>/status", methods=["POST"])
@@ -1770,19 +2026,27 @@ def create_token(account_index: int):
     base_url, session_value, headers, cookies = build_token_headers(account)
     if not session_value:
         return jsonify({"ok": False, "error": "missing session"}), 400
-    url = base_url.rstrip("/") + "/" + TOKEN_PATH.lstrip("/")
-    create_payload = {
-        "remain_quota": 0,
-        "remain_amount": 0,
-        "expired_time": -1,
-        "unlimited_quota": True,
-        "model_limits_enabled": False,
-        "model_limits": "",
-        "cross_group_retry": False,
-        "name": token_name,
-        "group": token_group,
-        "allow_ips": "",
-    }
+    if account_provider(account) == "sub2api":
+        url = base_url.rstrip("/") + "/" + SUB2API_KEYS_PATH.lstrip("/")
+        try:
+            group_id: int | str = int(token_group)
+        except ValueError:
+            group_id = token_group
+        create_payload = {"name": token_name, "group_id": group_id}
+    else:
+        url = base_url.rstrip("/") + "/" + TOKEN_PATH.lstrip("/")
+        create_payload = {
+            "remain_quota": 0,
+            "remain_amount": 0,
+            "expired_time": -1,
+            "unlimited_quota": True,
+            "model_limits_enabled": False,
+            "model_limits": "",
+            "cross_group_retry": False,
+            "name": token_name,
+            "group": token_group,
+            "allow_ips": "",
+        }
     try:
         resp = requests.post(url, cookies=cookies, headers=headers, json=create_payload, timeout=TIMEOUT_SECONDS)
     except requests.RequestException as exc:
@@ -1818,7 +2082,10 @@ def delete_token(account_index: int, token_id: int):
     base_url, session_value, headers, cookies = build_token_headers(account)
     if not session_value:
         return jsonify({"ok": False, "error": "missing session"}), 400
-    url = base_url.rstrip("/") + "/" + TOKEN_PATH.lstrip("/") + str(token_id)
+    if account_provider(account) == "sub2api":
+        url = base_url.rstrip("/") + "/" + SUB2API_KEYS_PATH.lstrip("/") + f"/{token_id}"
+    else:
+        url = base_url.rstrip("/") + "/" + TOKEN_PATH.lstrip("/") + str(token_id)
     try:
         resp = requests.delete(url, cookies=cookies, headers=headers, timeout=TIMEOUT_SECONDS)
     except requests.RequestException as exc:
@@ -1839,6 +2106,15 @@ def reveal_token_key(account_index: int, token_id: int):
     base_url, session_value, headers, cookies = build_token_headers(account)
     if not session_value:
         return jsonify({"ok": False, "error": "missing session"}), 400
+    if account_provider(account) == "sub2api":
+        try:
+            tokens, payload = fetch_remote_tokens(account)
+        except Exception as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 502
+        for token in tokens:
+            if str(token.get("id")) == str(token_id):
+                return jsonify({"ok": True, "key": format_token_key(token.get("key")), "payload": payload})
+        return jsonify({"ok": False, "error": "token not found", "payload": payload}), 404
     url = base_url.rstrip("/") + "/" + TOKEN_PATH.lstrip("/") + f"{token_id}/key"
     try:
         resp = requests.post(url, cookies=cookies, headers=headers, timeout=TIMEOUT_SECONDS)
@@ -1849,6 +2125,41 @@ def reveal_token_key(account_index: int, token_id: int):
     if error:
         return jsonify({"ok": False, "error": error, "payload": payload}), 502
     return jsonify({"ok": True, "key": key_from_token_payload(payload), "payload": payload})
+
+
+@app.route("/api/sites/info", methods=["GET", "PUT"])
+def site_info():
+    if request.method == "GET":
+        base_url = str(request.args.get("base_url") or "").strip()
+        if not base_url:
+            return jsonify({"ok": False, "error": "base_url is required"}), 400
+        return jsonify({"ok": True, "site": get_site_info(base_url)})
+
+    payload = request.get_json(force=True)
+    base_url = str(payload.get("base_url") or "").strip() if isinstance(payload, dict) else ""
+    remark = str(payload.get("remark") or "").strip() if isinstance(payload, dict) else ""
+    if not base_url:
+        return jsonify({"ok": False, "error": "base_url is required"}), 400
+    if len(remark) > 500:
+        return jsonify({"ok": False, "error": "remark must not exceed 500 characters"}), 400
+    return jsonify({"ok": True, "site": update_site_info(base_url, remark=remark)})
+
+
+@app.route("/api/sites/models", methods=["POST"])
+def site_models():
+    payload = request.get_json(force=True)
+    base_url = str(payload.get("base_url") or "").strip() if isinstance(payload, dict) else ""
+    if not base_url:
+        return jsonify({"ok": False, "error": "base_url is required"}), 400
+    try:
+        models, info, api_response = fetch_site_models(base_url)
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    except requests.RequestException as exc:
+        return jsonify({"ok": False, "error": f"network error: {exc}"}), 502
+    except RuntimeError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 502
+    return jsonify({"ok": True, "models": models, "site": info, "payload": api_response})
 
 
 @app.route("/api/system/status", methods=["GET"])

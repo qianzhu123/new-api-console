@@ -257,7 +257,15 @@
       display: flex;
       flex-wrap: wrap;
       gap: 8px;
+    }
+    .hero-meta {
+      display: grid;
+      gap: 8px;
       margin-bottom: 12px;
+    }
+    .hero-address-row {
+      display: flex;
+      min-width: 0;
     }
     .hero-badge {
       display: inline-flex;
@@ -273,6 +281,93 @@
       white-space: normal;
       word-break: break-word;
     }
+    .hero-address-badge {
+      width: fit-content;
+      justify-content: flex-start;
+      border-radius: 11px;
+      padding-right: 6px;
+    }
+    .hero-address-text {
+      min-width: 0;
+      flex: 0 1 auto;
+      word-break: break-all;
+    }
+    .site-section {
+      margin-top: 12px;
+      padding-top: 12px;
+      border-top: 1px solid var(--line);
+    }
+    .site-section-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+    .site-section-title {
+      font-size: 14px;
+      font-weight: 700;
+      color: #4a3827;
+    }
+    .site-remark-editor {
+      min-height: 72px;
+      margin-bottom: 8px;
+    }
+    .site-models {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+    .site-model {
+      max-width: 100%;
+      padding: 6px 9px;
+      border: 1px solid rgba(176,139,47,.24);
+      border-radius: 8px;
+      background: rgba(255,255,255,.72);
+      color: #4a3827;
+      font-size: 12px;
+      overflow-wrap: anywhere;
+    }
+    .site-model-empty {
+      color: var(--sub);
+      font-size: 12px;
+    }
+    .copy-icon-button {
+      flex: 0 0 auto;
+      width: 28px;
+      height: 28px;
+      padding: 0;
+      border-radius: 8px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      color: #5f4e3b;
+      background: rgba(255,255,255,.78);
+      border: 1px solid rgba(176,139,47,.26);
+      box-shadow: none;
+    }
+    .copy-icon-button:hover {
+      transform: translateY(-1px);
+      background: #fffaf0;
+      box-shadow: 0 5px 12px rgba(68,52,31,.12);
+    }
+    .copy-icon {
+      position: relative;
+      width: 13px;
+      height: 13px;
+    }
+    .copy-icon::before,
+    .copy-icon::after {
+      content: "";
+      position: absolute;
+      width: 8px;
+      height: 8px;
+      border: 1.5px solid currentColor;
+      border-radius: 2px;
+      background: #fffaf0;
+    }
+    .copy-icon::before { left: 1px; top: 1px; }
+    .copy-icon::after { right: 0; bottom: 0; }
     .metric-grid {
       display: grid;
       grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -443,7 +538,7 @@
     }
     .combo-list.open { display: block; animation: comboIn .14s ease; }
     .combo-list::before {
-      content: "本地地址";
+      content: attr(data-combo-label);
       display: block;
       margin: 2px 4px 6px;
       padding: 0 3px;
@@ -673,7 +768,7 @@
                 <th>序号</th>
                 <th>账号名</th>
                 <th>状态</th>
-                <th>new_api_user</th>
+                <th>类型/用户</th>
                 <th>今日签到状态</th>
                 <th>状态结果</th>
                 <th>操作</th>
@@ -692,37 +787,54 @@
           <div id="detail-status" class="detail-hero"></div>
         </div>
 
-        <hr style="border-color:var(--line); margin:12px 0;">
-        <h3 style="margin-top:0;">账号编辑</h3>
-        <div class="small" style="margin-bottom:10px;">可在左侧列表调整排序，序号会自动更新显示。</div>
-        <div id="edit-panel">
-          <div class="form-group">
-            <label for="f-name">账号名</label>
-            <input id="f-name" />
-          </div>
-          <div class="form-group combo-wrap">
-            <label for="f-base-url">域名地址(base_url)</label>
-            <input id="f-base-url" placeholder="https://example.com" autocomplete="off" />
-            <button type="button" class="combo-toggle" data-combo-target="f-base-url" aria-label="展开本地地址列表">⌄</button>
-            <div id="f-base-url-list" class="combo-list" role="listbox"></div>
-          </div>
-          <div class="form-group">
-            <label for="f-user">new_api_user</label>
-            <input id="f-user" />
-          </div>
-          <div class="form-group">
-            <label for="f-session">Session</label>
-            <textarea id="f-session"></textarea>
-          </div>
-          <div class="form-group inline">
-            <input type="checkbox" id="f-enabled" checked />
-            <label for="f-enabled" style="margin:0;">启用账号</label>
-          </div>
+        <div id="account-edit-section">
+          <hr style="border-color:var(--line); margin:12px 0;">
+          <h3 style="margin-top:0;">账号编辑</h3>
+          <div class="small" style="margin-bottom:10px;">可在左侧列表调整排序，序号会自动更新显示。</div>
+          <div id="edit-panel">
+            <div class="form-group">
+              <label for="f-name">账号名</label>
+              <input id="f-name" />
+            </div>
+            <div class="form-group combo-wrap">
+              <label for="f-base-url">域名地址</label>
+              <input id="f-base-url" placeholder="https://example.com" autocomplete="off" />
+              <button type="button" class="combo-toggle" data-combo-target="f-base-url" aria-label="展开本地地址列表">⌄</button>
+              <div id="f-base-url-list" class="combo-list" role="listbox" data-combo-label="本地地址"></div>
+            </div>
+            <div class="form-group combo-wrap">
+              <label for="f-provider">接口类型</label>
+              <input id="f-provider" readonly autocomplete="off" />
+              <button type="button" class="combo-toggle" data-combo-target="f-provider" aria-label="展开接口类型列表">⌄</button>
+              <div id="f-provider-list" class="combo-list" role="listbox" data-combo-label="接口类型"></div>
+            </div>
+            <div class="form-group">
+              <label for="f-user">new_api_user</label>
+              <input id="f-user" />
+            </div>
+            <div class="form-group">
+              <label for="f-session">Session / Bearer Token</label>
+              <textarea id="f-session"></textarea>
+            </div>
+            <div class="form-group sub2api-cookie-field">
+              <label for="f-stripe-mid">Cookie 字段：__stripe_mid</label>
+              <input id="f-stripe-mid" placeholder="只填写 __stripe_mid= 后面的值" />
+            </div>
+            <div class="form-group sub2api-cookie-field">
+              <label for="f-stripe-sid">Cookie 字段：__stripe_sid</label>
+              <input id="f-stripe-sid" placeholder="只填写 __stripe_sid= 后面的值" />
+            </div>
+            <textarea id="f-cookie" style="display:none;"></textarea>
+            <div class="form-group inline">
+              <input type="checkbox" id="f-enabled" checked />
+              <label for="f-enabled" style="margin:0;">启用账号</label>
+            </div>
 
-          <div class="bar">
-            <button id="btn-save">保存</button>
-            <button id="btn-cancel" class="secondary">取消</button>
-            <button id="btn-delete" class="bad">删除</button>
+            <div class="bar">
+              <button id="btn-save">保存</button>
+              <button id="btn-cancel" class="secondary">取消</button>
+              <button id="btn-delete" class="bad">删除</button>
+            </div>
           </div>
         </div>
         <div class="status-line" id="busy-line"></div>
@@ -742,19 +854,34 @@
           <input id="m-name" />
         </div>
         <div class="form-group combo-wrap">
-          <label for="m-base-url">域名地址(base_url)</label>
+          <label for="m-base-url">域名地址</label>
           <input id="m-base-url" placeholder="https://example.com" autocomplete="off" />
           <button type="button" class="combo-toggle" data-combo-target="m-base-url" aria-label="展开本地地址列表">⌄</button>
-          <div id="m-base-url-list" class="combo-list" role="listbox"></div>
+          <div id="m-base-url-list" class="combo-list" role="listbox" data-combo-label="本地地址"></div>
+        </div>
+        <div class="form-group combo-wrap">
+          <label for="m-provider">接口类型</label>
+          <input id="m-provider" readonly autocomplete="off" />
+          <button type="button" class="combo-toggle" data-combo-target="m-provider" aria-label="展开接口类型列表">⌄</button>
+          <div id="m-provider-list" class="combo-list" role="listbox" data-combo-label="接口类型"></div>
         </div>
         <div class="form-group">
           <label for="m-user">new_api_user</label>
           <input id="m-user" inputmode="numeric" />
         </div>
         <div class="form-group span-2">
-          <label for="m-session">Session</label>
-          <textarea id="m-session"></textarea>
+          <label for="m-session">Session / Bearer Token</label>
+          <textarea id="m-session" placeholder="new-api 填 session；sub2api 填 Authorization: Bearer 后面的 JWT"></textarea>
         </div>
+        <div class="form-group sub2api-cookie-field">
+          <label for="m-stripe-mid">Cookie 字段：__stripe_mid</label>
+          <input id="m-stripe-mid" placeholder="只填写 __stripe_mid= 后面的值" />
+        </div>
+        <div class="form-group sub2api-cookie-field">
+          <label for="m-stripe-sid">Cookie 字段：__stripe_sid</label>
+          <input id="m-stripe-sid" placeholder="只填写 __stripe_sid= 后面的值" />
+        </div>
+        <textarea id="m-cookie" style="display:none;"></textarea>
         <div class="form-group span-2 inline">
           <input type="checkbox" id="m-enabled" checked />
           <label for="m-enabled" style="margin:0;">立即启用该账号</label>
@@ -805,6 +932,7 @@
 const state = {
   accounts: [],
   selected: null,
+  selectedSite: null,
   editingAccountKey: null,
   defaultBaseUrl: 'https://www.new-api.com',
   knownBaseUrls: [],
@@ -825,6 +953,8 @@ const state = {
   tokenRevealing: {},
   tokenModalKey: null,
   confirmResolver: null,
+  siteInfo: {},
+  siteLoading: {},
 };
 
 const el = {
@@ -832,18 +962,29 @@ const el = {
   detailEmpty: document.getElementById('detail-empty'),
   detailContent: document.getElementById('detail-content'),
   detailStatus: document.getElementById('detail-status'),
+  accountEditSection: document.getElementById('account-edit-section'),
   toastStack: document.getElementById('toast-stack'),
   panelTitle: document.getElementById('panel-title'),
   fName: document.getElementById('f-name'),
   fBaseUrl: document.getElementById('f-base-url'),
+  fProvider: document.getElementById('f-provider'),
+  fProviderList: document.getElementById('f-provider-list'),
   fUser: document.getElementById('f-user'),
   fSession: document.getElementById('f-session'),
+  fCookie: document.getElementById('f-cookie'),
+  fStripeMid: document.getElementById('f-stripe-mid'),
+  fStripeSid: document.getElementById('f-stripe-sid'),
   fEnabled: document.getElementById('f-enabled'),
   addModal: document.getElementById('add-modal'),
   mName: document.getElementById('m-name'),
   mBaseUrl: document.getElementById('m-base-url'),
+  mProvider: document.getElementById('m-provider'),
+  mProviderList: document.getElementById('m-provider-list'),
   mUser: document.getElementById('m-user'),
   mSession: document.getElementById('m-session'),
+  mCookie: document.getElementById('m-cookie'),
+  mStripeMid: document.getElementById('m-stripe-mid'),
+  mStripeSid: document.getElementById('m-stripe-sid'),
   mEnabled: document.getElementById('m-enabled'),
   modalError: document.getElementById('modal-error'),
   btnModalSave: document.getElementById('btn-modal-save'),
@@ -965,6 +1106,61 @@ function normalizeBaseUrlInput(value) {
   }
 }
 
+const PROVIDER_OPTIONS = [
+  { value: 'new-api', label: 'new-api' },
+  { value: 'sub2api', label: 'sub2api' },
+];
+
+function normalizeProvider(value) {
+  const v = String(value || '').trim().toLowerCase();
+  return PROVIDER_OPTIONS.some((item) => item.value === v) ? v : 'new-api';
+}
+
+function parseCookieFields(cookieText = '') {
+  const out = { __stripe_mid: '', __stripe_sid: '' };
+  for (const part of String(cookieText || '').split(';')) {
+    const idx = part.indexOf('=');
+    if (idx < 0) continue;
+    const key = part.slice(0, idx).trim();
+    const value = part.slice(idx + 1).trim();
+    if (key === '__stripe_mid' || key === '__stripe_sid') out[key] = value;
+  }
+  return out;
+}
+
+function cleanCookieFieldValue(value, cookieName) {
+  let v = String(value || '').trim();
+  if (!v) return '';
+  const prefix = `${cookieName}=`;
+  if (v.startsWith(prefix)) v = v.slice(prefix.length).trim();
+  if (v.includes(';')) v = v.split(';')[0].trim();
+  return v;
+}
+
+function buildCookieFromFields(stripeMid, stripeSid, originalCookie = '') {
+  const map = new Map();
+  for (const part of String(originalCookie || '').split(';')) {
+    const idx = part.indexOf('=');
+    if (idx < 0) continue;
+    const key = part.slice(0, idx).trim();
+    const value = part.slice(idx + 1).trim();
+    if (key) map.set(key, value);
+  }
+  const mid = cleanCookieFieldValue(stripeMid, '__stripe_mid');
+  const sid = cleanCookieFieldValue(stripeSid, '__stripe_sid');
+  if (mid) map.set('__stripe_mid', mid); else map.delete('__stripe_mid');
+  if (sid) map.set('__stripe_sid', sid); else map.delete('__stripe_sid');
+  return Array.from(map.entries()).map(([key, value]) => `${key}=${value}`).join('; ');
+}
+
+function syncCookieHidden(scope) {
+  const isModal = scope === 'modal';
+  const cookie = isModal ? el.mCookie : el.fCookie;
+  const mid = isModal ? el.mStripeMid : el.fStripeMid;
+  const sid = isModal ? el.mStripeSid : el.fStripeSid;
+  cookie.value = buildCookieFromFields(mid.value, sid.value, cookie.value);
+}
+
 function bindBaseUrlNormalizer(node) {
   const apply = () => {
     const normalized = normalizeBaseUrlInput(node.value);
@@ -1023,19 +1219,54 @@ function renderKnownBaseUrls(filterValue = '') {
   }
 }
 
+function renderProviderList(input, list) {
+  if (!list) return;
+  const current = normalizeProvider(input?.value);
+  list.innerHTML = '';
+  for (const item of PROVIDER_OPTIONS) {
+    const row = document.createElement('div');
+    row.className = `combo-item ${item.value === current ? 'active' : ''}`;
+    row.setAttribute('role', 'option');
+    row.textContent = item.label;
+    row.addEventListener('mousedown', (e) => {
+      e.preventDefault();
+      if (!input) return;
+      input.value = item.value;
+      hideComboLists();
+      updateProviderHints(input === el.mProvider ? 'modal' : 'edit');
+      input.focus();
+    });
+    list.appendChild(row);
+  }
+}
+
 function hideComboLists() {
-  for (const list of [el.fBaseUrlList, el.mBaseUrlList]) if (list) list.classList.remove('open');
+  for (const list of [el.fBaseUrlList, el.mBaseUrlList, el.fProviderList, el.mProviderList]) if (list) list.classList.remove('open');
 }
 
 function showComboList(node) {
-  const list = node === el.fBaseUrl ? el.fBaseUrlList : el.mBaseUrlList;
+  const isProvider = node === el.fProvider || node === el.mProvider;
+  const list = node === el.fBaseUrl ? el.fBaseUrlList : node === el.mBaseUrl ? el.mBaseUrlList : node === el.fProvider ? el.fProviderList : el.mProviderList;
   hideComboLists();
-  renderKnownBaseUrls(node.value);
+  if (isProvider) renderProviderList(node, list);
+  else renderKnownBaseUrls(node.value);
   if (list) list.classList.add('open');
 }
 
+function bindProviderCombo(node) {
+  node.addEventListener('focus', () => showComboList(node));
+  node.addEventListener('click', () => showComboList(node));
+  node.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      showComboList(node);
+    }
+    if (e.key === 'Escape') hideComboLists();
+  });
+}
+
 function setEditFormDisabled(disabled) {
-  for (const node of [el.fName, el.fBaseUrl, el.fUser, el.fSession, el.fEnabled]) node.disabled = disabled;
+  for (const node of [el.fName, el.fBaseUrl, el.fProvider, el.fUser, el.fSession, el.fCookie, el.fStripeMid, el.fStripeSid, el.fEnabled]) node.disabled = disabled;
   const saveBtn = document.getElementById('btn-save');
   const cancelBtn = document.getElementById('btn-cancel');
   const deleteBtn = document.getElementById('btn-delete');
@@ -1047,15 +1278,21 @@ function setEditFormDisabled(disabled) {
 function resetModalForm() {
   el.mName.value = '';
   el.mBaseUrl.value = '';
+  el.mProvider.value = 'new-api';
   el.mUser.value = '';
   el.mSession.value = '';
+  el.mCookie.value = '';
+  el.mStripeMid.value = '';
+  el.mStripeSid.value = '';
   el.mEnabled.checked = true;
   el.modalError.textContent = '';
-  clearFieldStates([el.mName, el.mBaseUrl, el.mUser, el.mSession]);
+  clearFieldStates([el.mName, el.mBaseUrl, el.mUser, el.mSession, el.mCookie, el.mStripeMid, el.mStripeSid]);
+  updateProviderHints('modal');
 }
 
 function openAddModal() {
   state.selected = null;
+  state.selectedSite = null;
   fillForm(null);
   renderTable();
   renderDetail();
@@ -1072,26 +1309,30 @@ function closeAddModal() {
 }
 
 function buildPayloadFromInputs(fields) {
+  if (fields.stripeMid && fields.stripeSid) {
+    fields.cookie.value = buildCookieFromFields(fields.stripeMid.value, fields.stripeSid.value, fields.cookie.value);
+  }
   return {
     name: fields.name.value.trim(),
     base_url: normalizeBaseUrlInput(fields.baseUrl.value),
+    provider: normalizeProvider(fields.provider.value),
     new_api_user: fields.user.value.trim(),
-    session: fields.session.value.trim(),
+    session: fields.session.value.trim().replace(/^Bearer\s+/i, ''),
+    cookie: fields.cookie.value.trim(),
     enabled: !!fields.enabled.checked,
   };
 }
 
 function validatePayload(payload, fields) {
   const errors = [];
-  clearFieldStates([fields.name, fields.baseUrl, fields.user, fields.session]);
+  clearFieldStates([fields.name, fields.baseUrl, fields.user, fields.session, fields.cookie]);
   if (!payload.name) { errors.push('账号名不能为空'); setFieldInvalid(fields.name, true); }
   else if (!/^[A-Za-z0-9_\-.\u4e00-\u9fa5 ]{2,40}$/.test(payload.name)) { errors.push('账号名需为 2-40 个字符，只允许中文、英文、数字、空格、_ - .'); setFieldInvalid(fields.name, true); }
-  if (!payload.new_api_user) { errors.push('new_api_user 不能为空'); setFieldInvalid(fields.user, true); }
-  else if (!/^\d+$/.test(payload.new_api_user)) { errors.push('new_api_user 只能是数字'); setFieldInvalid(fields.user, true); }
-  if (!payload.base_url) { errors.push('域名地址(base_url)不能为空'); setFieldInvalid(fields.baseUrl, true); }
-  else if (!/^https?:\/\/.+/.test(payload.base_url)) { errors.push('域名地址(base_url)格式不正确'); setFieldInvalid(fields.baseUrl, true); }
+  if (payload.provider === 'new-api' && payload.new_api_user && !/^\d+$/.test(payload.new_api_user)) { errors.push('new_api_user 只能是数字'); setFieldInvalid(fields.user, true); }
+  if (!payload.base_url) { errors.push('域名地址不能为空'); setFieldInvalid(fields.baseUrl, true); }
+  else if (!/^https?:\/\/.+/.test(payload.base_url)) { errors.push('域名地址格式不正确'); setFieldInvalid(fields.baseUrl, true); }
   if (!payload.session) { errors.push('Session 不能为空'); setFieldInvalid(fields.session, true); }
-  else if (/\s/.test(payload.session) || payload.session.length < 20) { errors.push('Session 不能包含空白字符，且长度不能过短'); setFieldInvalid(fields.session, true); }
+  else if (/\s/.test(payload.session) || payload.session.length < (payload.provider === 'sub2api' ? 30 : 20)) { errors.push('Session / Bearer Token 不能包含空白字符，且长度不能过短'); setFieldInvalid(fields.session, true); }
   return errors;
 }
 
@@ -1100,10 +1341,15 @@ function fillForm(acc = null) {
     state.editingAccountKey = null;
     el.fName.value = '';
     el.fBaseUrl.value = '';
+    el.fProvider.value = 'new-api';
     el.fUser.value = '';
     el.fSession.value = '';
+    el.fCookie.value = '';
+    el.fStripeMid.value = '';
+    el.fStripeSid.value = '';
     el.fEnabled.checked = true;
-    clearFieldStates([el.fName, el.fBaseUrl, el.fUser, el.fSession]);
+    clearFieldStates([el.fName, el.fBaseUrl, el.fUser, el.fSession, el.fCookie, el.fStripeMid, el.fStripeSid]);
+    updateProviderHints('edit');
     setEditFormDisabled(true);
     el.panelTitle.textContent = '账号编辑';
     return;
@@ -1111,10 +1357,16 @@ function fillForm(acc = null) {
   state.editingAccountKey = accountKey(acc);
   el.fName.value = acc.name || '';
   el.fBaseUrl.value = acc.base_url || '';
+  el.fProvider.value = normalizeProvider(acc.provider || 'new-api');
   el.fUser.value = acc.new_api_user || '';
   el.fSession.value = acc.session || '';
+  el.fCookie.value = acc.cookie || '';
+  const cookieFields = parseCookieFields(acc.cookie || '');
+  el.fStripeMid.value = cookieFields.__stripe_mid || '';
+  el.fStripeSid.value = cookieFields.__stripe_sid || '';
   el.fEnabled.checked = !!acc.enabled;
-  clearFieldStates([el.fName, el.fBaseUrl, el.fUser, el.fSession]);
+  clearFieldStates([el.fName, el.fBaseUrl, el.fUser, el.fSession, el.fCookie, el.fStripeMid, el.fStripeSid]);
+  updateProviderHints('edit');
   setEditFormDisabled(false);
   el.panelTitle.textContent = `编辑账号：${acc.name}`;
 }
@@ -1213,7 +1465,9 @@ function markAccountSiteCheckinUnsupported(key) {
 }
 
 function getGroupStats(accounts) {
-  let enabled = 0, signed = 0, valid = 0, totalMoney = 0, hasMoney = false, systemStatus = null;
+  let enabled = 0, signed = 0, valid = 0;
+  let totalMoney = 0, totalPreviousChange = 0, totalYesterdayChange = 0;
+  let hasMoney = false, hasPreviousChange = false, hasYesterdayChange = false, systemStatus = null;
   const checkinUnsupported = isGroupCheckinUnsupported(accounts);
   for (const acc of accounts) {
     const key = accountKey(acc);
@@ -1226,9 +1480,22 @@ function getGroupStats(accounts) {
       if (!systemStatus && sys) systemStatus = sys;
       const money = quotaToMoney(sr?.quota?.quota, sys);
       if (Number.isFinite(money)) { totalMoney += money; hasMoney = true; }
+      const previousChange = quotaToMoney(sr?.quota_delta?.change_from_previous, sys);
+      if (Number.isFinite(previousChange)) { totalPreviousChange += previousChange; hasPreviousChange = true; }
+      const yesterdayChange = quotaToMoney(sr?.yesterday_delta?.change_from_yesterday_last, sys);
+      if (Number.isFinite(yesterdayChange)) { totalYesterdayChange += yesterdayChange; hasYesterdayChange = true; }
     }
   }
-  return { enabled, signed, valid, totalMoney: hasMoney ? totalMoney : null, systemStatus, checkinUnsupported };
+  return {
+    enabled,
+    signed,
+    valid,
+    totalMoney: hasMoney ? totalMoney : null,
+    totalPreviousChange: hasPreviousChange ? totalPreviousChange : null,
+    totalYesterdayChange: hasYesterdayChange ? totalYesterdayChange : null,
+    systemStatus,
+    checkinUnsupported,
+  };
 }
 
 function renderGroupRow(group) {
@@ -1237,8 +1504,13 @@ function renderGroupRow(group) {
   const stats = getGroupStats(group.accounts);
   const tr = document.createElement('tr');
   tr.className = 'group-row';
-  tr.title = '点击地址分组可展开或折叠';
+  if (state.selectedSite === group.baseUrl) tr.classList.add('selected');
+  tr.title = '单击查看地址详情，双击展开或折叠';
   tr.addEventListener('click', (e) => {
+    if (e.target.closest('button')) return;
+    selectSite(group.baseUrl);
+  });
+  tr.addEventListener('dblclick', (e) => {
     if (e.target.closest('button')) return;
     state.collapsedGroups[key] = !state.collapsedGroups[key];
     renderTable();
@@ -1297,7 +1569,7 @@ function renderTable() {
         <td class="mono">${index + 1}</td>
         <td>${acc.name || ''}</td>
         <td>${running ? '<span class="tag run">处理中</span>' : maskTag(acc.enabled)}</td>
-        <td class="mono">${acc.new_api_user || ''}</td>
+        <td class="mono">${acc.provider || 'new-api'}${acc.new_api_user ? ' / ' + acc.new_api_user : ''}</td>
         <td class="small">${rowSum.checkinText}</td>
         <td class="small status-short" title="${(state.statusResults[key]?.api_error || '').replace(/"/g, '&quot;')}">${rowSum.statusText}</td>
         <td>
@@ -1684,14 +1956,171 @@ async function deleteTokenForAccount(key, tokenId) {
   notify('ok', '令牌已删除', `令牌 #${tokenId} 已删除。`);
 }
 
+async function loadSiteInfo(baseUrl) {
+  const normalized = normalizeBaseUrlInput(baseUrl);
+  if (!normalized || state.siteLoading[normalized] === 'info') return;
+  state.siteLoading[normalized] = 'info';
+  renderDetail();
+  try {
+    const data = await api(`/api/sites/info?base_url=${encodeURIComponent(normalized)}`);
+    state.siteInfo[normalized] = data.site || {};
+    renderDetail();
+    if (!data.site?.models_loaded) await refreshSiteModels(normalized, true);
+  } catch (e) {
+    log(`${normalized} 地址信息加载失败：${e.message || e}`, 'bad2');
+    notify('bad2', '地址信息加载失败', `${normalized}：${e.message || e}`);
+  } finally {
+    if (state.siteLoading[normalized] === 'info') delete state.siteLoading[normalized];
+    renderDetail();
+  }
+}
+
+async function saveSiteRemark(baseUrl) {
+  const normalized = normalizeBaseUrlInput(baseUrl);
+  const textarea = el.detailStatus.querySelector('[data-site-remark]');
+  const remark = String(textarea?.value || '').trim();
+  if (remark.length > 500) {
+    notify('warn2', '备注过长', '地址备注不能超过 500 个字符。');
+    return;
+  }
+  state.siteLoading[normalized] = 'remark';
+  renderDetail();
+  try {
+    const data = await api('/api/sites/info', {
+      method: 'PUT',
+      body: JSON.stringify({ base_url: normalized, remark }),
+    });
+    state.siteInfo[normalized] = data.site || {};
+    log(`${normalized} 地址备注已保存`, 'ok');
+    notify('ok', '地址备注已保存', normalized);
+  } finally {
+    delete state.siteLoading[normalized];
+    renderDetail();
+  }
+}
+
+async function refreshSiteModels(baseUrl, automatic = false) {
+  const normalized = normalizeBaseUrlInput(baseUrl);
+  if (!normalized || state.siteLoading[normalized] === 'models') return;
+  state.siteLoading[normalized] = 'models';
+  renderDetail();
+  if (!automatic) notify('warn2', '正在检测模型', `${normalized} 正在读取支持的模型。`);
+  try {
+    const data = await api('/api/sites/models', {
+      method: 'POST',
+      body: JSON.stringify({ base_url: normalized }),
+    });
+    state.siteInfo[normalized] = data.site || {};
+    log(`${normalized} 模型列表已更新，共 ${data.models?.length || 0} 个`, 'ok');
+    notify('ok', '模型列表已更新', `${normalized}：${data.models?.length || 0} 个匹配模型。`);
+  } catch (e) {
+    log(`${normalized} 模型检测失败：${e.message || e}`, 'bad2');
+    notify('bad2', '模型检测失败', `${normalized}：${e.message || e}`);
+  } finally {
+    delete state.siteLoading[normalized];
+    renderDetail();
+  }
+}
+
+function renderSiteDetail() {
+  const baseUrl = state.selectedSite;
+  const group = getGroupedAccounts().find((item) => item.baseUrl === baseUrl);
+  if (!group) {
+    state.selectedSite = null;
+    renderDetail();
+    return;
+  }
+  const stats = getGroupStats(group.accounts);
+  const info = state.siteInfo[baseUrl] || {};
+  const loading = state.siteLoading[baseUrl] || '';
+  const models = Array.isArray(info.models) ? info.models : [];
+  const signText = stats.checkinUnsupported ? '不可签到' : `${stats.signed}/${group.accounts.length}`;
+  el.detailEmpty.style.display = 'none';
+  el.detailContent.style.display = 'block';
+  el.accountEditSection.style.display = 'none';
+  el.panelTitle.textContent = '地址详情';
+  el.detailStatus.innerHTML = `
+    <div class="hero-title">
+      <div>
+        <div class="hero-name">地址信息</div>
+        <div class="hero-email">地址分组汇总</div>
+      </div>
+    </div>
+    <div class="hero-address-row" style="margin-bottom:8px;">
+      <span class="hero-badge hero-address-badge mono">
+        <span class="hero-address-text">地址：${escapeHtml(baseUrl)}</span>
+        <button type="button" class="copy-icon-button" data-copy-site-address title="复制地址" aria-label="复制地址">
+          <span class="copy-icon" aria-hidden="true"></span>
+        </button>
+      </span>
+    </div>
+    <div class="hero-badges">
+      <span class="hero-badge">账号数：${group.accounts.length}</span>
+      <span class="hero-badge">可用数：${stats.valid}</span>
+      <span class="hero-badge">今日签到：${signText}</span>
+    </div>
+    <div class="metric-grid" style="margin-top:12px;">
+      <div class="metric-card">
+        <div class="metric-label">当前总额度</div>
+        <div class="metric-value">${formatMoney(stats.totalMoney, stats.systemStatus || state.systemStatus)}</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-label">总额与上次检测相比</div>
+        <div class="metric-value ${metricTone(stats.totalPreviousChange)}">${formatMoney(stats.totalPreviousChange, stats.systemStatus || state.systemStatus, true)}</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-label">总额与昨天最后一次检测相比</div>
+        <div class="metric-value ${metricTone(stats.totalYesterdayChange)}">${formatMoney(stats.totalYesterdayChange, stats.systemStatus || state.systemStatus, true)}</div>
+      </div>
+    </div>
+    <div class="site-section">
+      <div class="site-section-head">
+        <div class="site-section-title">地址备注</div>
+        <button type="button" data-save-site-remark ${loading ? 'disabled' : ''}>${loading === 'remark' ? '保存中' : '保存备注'}</button>
+      </div>
+      <textarea class="site-remark-editor" data-site-remark maxlength="500" placeholder="填写该地址的备注信息">${escapeHtml(info.remark || '')}</textarea>
+    </div>
+    <div class="site-section">
+      <div class="site-section-head">
+        <div>
+          <div class="site-section-title">支持的模型</div>
+          <div class="small">更新时间：${formatShortTs(info.models_updated_at) || '-'}</div>
+        </div>
+        <button type="button" class="secondary" data-refresh-site-models ${loading ? 'disabled' : ''}>${loading === 'models' ? '检测中' : '刷新模型'}</button>
+      </div>
+      <div class="site-models">
+        ${loading === 'info' && !info.models_loaded
+          ? '<div class="site-model-empty">正在加载地址信息...</div>'
+          : models.length
+            ? models.map((model) => `<span class="site-model mono">${escapeHtml(model)}</span>`).join('')
+            : `<div class="site-model-empty">${info.models_loaded ? '未发现匹配的 GPT、Claude 或 Gemini 模型。' : '尚未检测模型。'}</div>`}
+      </div>
+    </div>
+  `;
+  const saveRemarkButton = el.detailStatus.querySelector('[data-save-site-remark]');
+  if (saveRemarkButton) saveRemarkButton.addEventListener('click', () => saveSiteRemark(baseUrl).catch((e) => notify('bad2', '备注保存失败', e.message || String(e))));
+  const refreshModelsButton = el.detailStatus.querySelector('[data-refresh-site-models]');
+  if (refreshModelsButton) refreshModelsButton.addEventListener('click', () => refreshSiteModels(baseUrl));
+  const copySiteAddressButton = el.detailStatus.querySelector('[data-copy-site-address]');
+  if (copySiteAddressButton) copySiteAddressButton.addEventListener('click', () => copyText(baseUrl, '地址已复制'));
+  fitMetricValues();
+  flashDetail();
+}
+
 function renderDetail() {
+  if (state.selectedSite) {
+    renderSiteDetail();
+    return;
+  }
   if (!state.selected) {
     el.detailEmpty.style.display = 'block';
     el.detailContent.style.display = 'none';
+    el.accountEditSection.style.display = 'block';
     return;
   }
   el.detailEmpty.style.display = 'none';
   el.detailContent.style.display = 'block';
+  el.accountEditSection.style.display = 'block';
   const acc = state.selected;
   const key = accountKey(acc);
   const sr = state.statusResults[key];
@@ -1714,11 +2143,20 @@ function renderDetail() {
         <div class="hero-email">${identity.email || '未检测到邮箱信息'}</div>
       </div>
     </div>
-    <div class="hero-badges">
-      <span class="hero-badge mono">序号：${displayIndexByKey(key)}</span>
-      <span class="hero-badge">状态：${acc.enabled ? '启用' : '停用'}</span>
-      <span class="hero-badge">今日签到：${signState}</span>
-      <span class="hero-badge mono">地址：${acc.base_url || '-'}</span>
+    <div class="hero-meta">
+      <div class="hero-badges">
+        <span class="hero-badge mono">序号：${displayIndexByKey(key)}</span>
+        <span class="hero-badge">状态：${acc.enabled ? '启用' : '停用'}</span>
+        <span class="hero-badge">今日签到：${signState}</span>
+      </div>
+      <div class="hero-address-row">
+        <span class="hero-badge hero-address-badge mono">
+          <span class="hero-address-text">地址：${escapeHtml(acc.base_url || '-')}</span>
+          <button type="button" class="copy-icon-button" data-copy-address title="复制地址" aria-label="复制地址">
+            <span class="copy-icon" aria-hidden="true"></span>
+          </button>
+        </span>
+      </div>
     </div>
     <div class="metric-grid">
       <div class="metric-card">
@@ -1738,6 +2176,10 @@ function renderDetail() {
     ${sr && !sr.session_valid ? `<div class="small bad2" style="margin-top:8px; word-break:break-word;">异常信息：${sr.api_error || '接口返回异常'}<\/div>` : ''}
     <div id="token-panel" class="token-panel"></div>
   `;
+  const copyAddressButton = el.detailStatus.querySelector('[data-copy-address]');
+  if (copyAddressButton) {
+    copyAddressButton.addEventListener('click', () => copyText(acc.base_url || '', '地址已复制'));
+  }
   fitMetricValues();
   flashDetail();
   fillForm(acc);
@@ -1745,6 +2187,7 @@ function renderDetail() {
 }
 
 function selectAccount(key) {
+  state.selectedSite = null;
   state.selected = findAccountByKey(key);
   if (state.selected) fillForm(state.selected);
   renderTable();
@@ -1755,9 +2198,23 @@ function selectAccount(key) {
   });
 }
 
+function selectSite(baseUrl) {
+  const normalized = normalizeBaseUrlInput(baseUrl);
+  state.selectedSite = normalized;
+  state.selected = null;
+  fillForm(null);
+  renderTable();
+  renderDetail();
+  loadSiteInfo(normalized);
+}
+
 async function refreshAccounts() {
   const data = await api('/api/accounts');
   state.accounts = data.accounts || [];
+  for (const group of getGroupedAccounts()) {
+    const key = groupKeyFromUrl(group.baseUrl);
+    if (!(key in state.collapsedGroups)) state.collapsedGroups[key] = true;
+  }
   state.defaultBaseUrl = data.default_base_url || state.defaultBaseUrl;
   state.knownBaseUrls = Array.isArray(data.known_base_urls) ? data.known_base_urls : [];
   renderKnownBaseUrls();
@@ -1818,13 +2275,35 @@ async function copyText(text, title = '复制成功') {
   const value = String(text || '');
   if (!value) return notify('warn2', '没有可复制内容', '当前项目没有可复制的文本。');
   try {
-    await navigator.clipboard.writeText(value);
+    if (navigator.clipboard?.writeText) {
+      try {
+        await navigator.clipboard.writeText(value);
+      } catch {
+        copyTextFallback(value);
+      }
+    } else {
+      copyTextFallback(value);
+    }
     log(title, 'ok');
     notify('ok', title, '内容已复制到剪贴板。');
   } catch (e) {
     log(`复制失败：${e.message || e}`, 'bad2');
     notify('bad2', '复制失败', e.message || String(e));
   }
+}
+
+function copyTextFallback(value) {
+  const textarea = document.createElement('textarea');
+  textarea.value = value;
+  textarea.setAttribute('readonly', '');
+  textarea.style.position = 'fixed';
+  textarea.style.left = '-9999px';
+  textarea.style.opacity = '0';
+  document.body.appendChild(textarea);
+  textarea.select();
+  const copied = document.execCommand('copy');
+  textarea.remove();
+  if (!copied) throw new Error('浏览器拒绝了剪贴板访问');
 }
 
 async function reorderAccounts(fromKey, toKey, before) {
@@ -1887,19 +2366,21 @@ async function statusOne(key) {
 }
 
 async function checkinAll() {
-  notify('warn2', '开始全部签到', '正在批量执行签到，请稍候。');
+  notify('warn2', '开始全部签到', '仅处理今日状态为未签到的启用账号。');
   const data = await api('/api/accounts/checkin-all', { method: 'POST', body: '{}' });
   let okCount = 0, alreadyCount = 0, unsignedCount = 0, unsupportedCount = 0;
   for (const r of data.results || []) {
     const key = String(r.account_index || '');
     const label = accountLabel(key);
     state.checkinResults[key] = r;
-    if (r.state === 'UNSUPPORTED') { markAccountSiteCheckinUnsupported(key); log(`${label} 所在网站不可签到${r.skipped ? '，已跳过' : ''}`, 'warn2'); unsupportedCount += 1; }
+    if (r.state === 'UNSUPPORTED') { markAccountSiteCheckinUnsupported(key); log(`${label} 所在网站不可签到`, 'warn2'); unsupportedCount += 1; }
     else if (r.state === 'FAILED') { state.signinStatus[key] = '未签到'; log(`${label} 签到失败：${r.message || ''}`, 'bad2'); unsignedCount += 1; }
     else if (r.state === 'ALREADY_SIGNED') { state.signinStatus[key] = '已签到'; log(`${label} 今日已签到`, 'warn2'); alreadyCount += 1; }
     else { state.signinStatus[key] = '已签到'; log(`${label} 签到成功`, 'ok'); okCount += 1; }
   }
-  notify('ok', '全部签到完成', `成功 ${okCount} 个，已签到 ${alreadyCount} 个，未签到 ${unsignedCount} 个，不可签到 ${unsupportedCount} 个。`);
+  const skippedSigned = Number(data.skipped_signed || 0);
+  const skippedUnsupported = Number(data.skipped_unsupported || 0);
+  notify('ok', '全部签到完成', `执行 ${data.eligible_count || 0} 个：成功 ${okCount} 个，已签到 ${alreadyCount} 个，失败 ${unsignedCount} 个，不可签到 ${unsupportedCount} 个；跳过已签到 ${skippedSigned} 个、不可签到 ${skippedUnsupported} 个。`);
 }
 
 async function statusAll() {
@@ -1925,8 +2406,14 @@ async function runGroupCheckin(group) {
     notify('warn2', '该网站不可签到', `${group.baseUrl} 未开启签到功能。`);
     return;
   }
-  const accounts = group.accounts.filter((acc) => acc.enabled);
-  notify('warn2', '开始地址签到', `${group.baseUrl}：共 ${accounts.length} 个启用账号。`);
+  const enabledAccounts = group.accounts.filter((acc) => acc.enabled);
+  const accounts = enabledAccounts.filter((acc) => (state.signinStatus[accountKey(acc)] || acc.signin_status || '未签到') === '未签到');
+  const skipped = enabledAccounts.length - accounts.length;
+  if (!accounts.length) {
+    notify('ok', '无需签到', `${group.baseUrl} 没有状态为未签到的启用账号。`);
+    return;
+  }
+  notify('warn2', '开始地址签到', `${group.baseUrl}：执行 ${accounts.length} 个未签到账号，跳过 ${skipped} 个。`);
   for (const acc of accounts) {
     const key = accountKey(acc);
     await withAccountBusy(key, 'checkin', () => checkinOne(key));
@@ -1934,7 +2421,7 @@ async function runGroupCheckin(group) {
   }
   renderTable();
   renderDetail();
-  notify('ok', '地址签到完成', `${group.baseUrl} 已执行完成。`);
+  notify('ok', '地址签到完成', `${group.baseUrl} 已完成 ${accounts.length} 个未签到账号，跳过 ${skipped} 个。`);
 }
 
 async function runGroupStatus(group) {
@@ -2001,9 +2488,9 @@ async function applyTopSort() {
 async function saveForm() {
   if (!state.editingAccountKey) { notify('warn2', '未选择账号', '请先点击左侧账号行，再编辑保存。'); return; }
   const key = state.editingAccountKey;
-  const payload = buildPayloadFromInputs({ name: el.fName, baseUrl: el.fBaseUrl, user: el.fUser, session: el.fSession, enabled: el.fEnabled });
+  const payload = buildPayloadFromInputs({ name: el.fName, baseUrl: el.fBaseUrl, provider: el.fProvider, user: el.fUser, session: el.fSession, cookie: el.fCookie, stripeMid: el.fStripeMid, stripeSid: el.fStripeSid, enabled: el.fEnabled });
   el.fBaseUrl.value = payload.base_url;
-  const errors = validatePayload(payload, { name: el.fName, baseUrl: el.fBaseUrl, user: el.fUser, session: el.fSession, enabled: el.fEnabled });
+  const errors = validatePayload(payload, { name: el.fName, baseUrl: el.fBaseUrl, provider: el.fProvider, user: el.fUser, session: el.fSession, cookie: el.fCookie, enabled: el.fEnabled });
   if (errors.length) { log(`保存失败：${errors[0]}`, 'bad2'); notify('bad2', '保存失败', errors[0]); return; }
   await api(`/api/accounts/${encodeURIComponent(key)}`, { method: 'PUT', body: JSON.stringify(payload) });
   log(`已更新账号 #${displayIndexByKey(key)}：${payload.name}`, 'ok');
@@ -2013,9 +2500,9 @@ async function saveForm() {
 }
 
 async function saveNewAccount() {
-  const payload = buildPayloadFromInputs({ name: el.mName, baseUrl: el.mBaseUrl, user: el.mUser, session: el.mSession, enabled: el.mEnabled });
+  const payload = buildPayloadFromInputs({ name: el.mName, baseUrl: el.mBaseUrl, provider: el.mProvider, user: el.mUser, session: el.mSession, cookie: el.mCookie, stripeMid: el.mStripeMid, stripeSid: el.mStripeSid, enabled: el.mEnabled });
   el.mBaseUrl.value = payload.base_url;
-  const errors = validatePayload(payload, { name: el.mName, baseUrl: el.mBaseUrl, user: el.mUser, session: el.mSession, enabled: el.mEnabled });
+  const errors = validatePayload(payload, { name: el.mName, baseUrl: el.mBaseUrl, provider: el.mProvider, user: el.mUser, session: el.mSession, cookie: el.mCookie, enabled: el.mEnabled });
   if (errors.length) { el.modalError.textContent = errors[0]; notify('bad2', '创建失败', errors[0]); return; }
   el.modalError.textContent = '';
   const data = await api('/api/accounts', { method: 'POST', body: JSON.stringify(payload) });
@@ -2097,10 +2584,24 @@ window.addEventListener('keydown', (e) => {
   if (el.tokenModal.classList.contains('open')) closeTokenModal();
 });
 window.addEventListener('resize', fitMetricValues);
-for (const node of [el.fName, el.fBaseUrl, el.fUser, el.fSession, el.mName, el.mBaseUrl, el.mUser, el.mSession]) {
+function updateProviderHints(scope) {
+  const isModal = scope === 'modal';
+  const provider = normalizeProvider((isModal ? el.mProvider : el.fProvider).value || 'new-api');
+  const user = isModal ? el.mUser : el.fUser;
+  const root = isModal ? el.addModal : document.getElementById('edit-panel');
+  user.disabled = provider === 'sub2api';
+  user.placeholder = '';
+  if (provider === 'sub2api') user.value = '';
+  for (const node of root.querySelectorAll('.sub2api-cookie-field')) {
+    node.style.display = provider === 'sub2api' ? 'block' : 'none';
+  }
+}
+el.fProvider.addEventListener('change', () => updateProviderHints('edit'));
+el.mProvider.addEventListener('change', () => updateProviderHints('modal'));
+for (const node of [el.fName, el.fBaseUrl, el.fUser, el.fSession, el.fCookie, el.fStripeMid, el.fStripeSid, el.mName, el.mBaseUrl, el.mUser, el.mSession, el.mCookie, el.mStripeMid, el.mStripeSid]) {
   node.addEventListener('input', () => {
     setFieldInvalid(node, false);
-    if ([el.mName, el.mBaseUrl, el.mUser, el.mSession].includes(node)) el.modalError.textContent = '';
+    if ([el.mName, el.mBaseUrl, el.mUser, el.mSession, el.mCookie, el.mStripeMid, el.mStripeSid].includes(node)) el.modalError.textContent = '';
   });
 }
 el.tokenModalName.addEventListener('input', () => {
@@ -2121,7 +2622,11 @@ document.addEventListener('mousedown', (e) => {
 });
 bindBaseUrlNormalizer(el.fBaseUrl);
 bindBaseUrlNormalizer(el.mBaseUrl);
+bindProviderCombo(el.fProvider);
+bindProviderCombo(el.mProvider);
 
+updateProviderHints('edit');
+updateProviderHints('modal');
 fillForm(null);
 refreshAccounts()
   .then(() => {

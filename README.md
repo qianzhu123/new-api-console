@@ -6,6 +6,8 @@ A local Flask web console for multi-account new-api management.
 
 - Multi-account management (add, edit, enable/disable, delete)
 - Per-account domain (`base_url`) configuration (required when adding/editing)
+- `new_api_user` is optional when adding or editing an account; when provided, it must be numeric.
+- Address-level detail view with aggregate balances, editable remarks, and cached supported-model information
 - One-click sign-in for one account or all enabled accounts
 - Persisted **today sign-in status** (`已签到 / 失败 / 未知`)
 - Automatic detection of websites that do not support check-in
@@ -36,7 +38,8 @@ qiandao/
 │  ├─ quota_history.json   # Local balance history
 │  ├─ signin_status.json   # Today sign-in status store
 │  ├─ status_cache.json    # Latest account status cache
-│  └─ token_cache.json     # Local token group/token metadata cache
+│  ├─ token_cache.json     # Local token group/token metadata cache
+│  └─ site_info.json       # Address remarks and filtered model cache
 ├─ templates/
 │  └─ index.html           # Web UI
 ├─ .gitignore
@@ -91,7 +94,7 @@ run_web.bat
 - Failed states remain `未签到`.
 - If the website reports that check-in is disabled or unsupported, or the check-in endpoint returns HTTP 404/405, the status is saved as `不可签到`.
 - Once one account confirms that its website cannot check in, that website group's check-in buttons are disabled and the group summary displays `不可签到`.
-- `全部签到` skips every account belonging to a website already marked `不可签到` and does not send check-in requests for those accounts.
+- `全部签到` only sends requests for enabled accounts whose current daily status is `未签到`; accounts marked `已签到` or `不可签到` are skipped.
 - Store file: `data/signin_status.json`.
 
 ### 2) Daily cleanup
@@ -118,6 +121,14 @@ run_web.bat
 - Successful token deletion removes the token metadata from the local cache.
 - If token creation fails because the selected group no longer exists, the app refreshes groups from the remote site and asks you to select again.
 - Full revealed `sk-...` token keys are not persisted to `data/token_cache.json`; only token metadata is cached locally.
+
+### 5) Address details and model cache
+
+- Single-click an address group to show its account count, available count, sign-in summary, aggregate balance metrics, address remark, and supported models.
+- Double-click an address group to expand or collapse it.
+- Address remarks and model results are stored in `data/site_info.json`; account records no longer contain remarks.
+- Model detection calls `/api/user/models` using the first account under that address.
+- Only model names containing `gpt-image-2`, `gpt`, `claude`, or `gemini` are displayed.
 
 ## UI Actions
 
