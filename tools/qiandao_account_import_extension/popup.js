@@ -72,7 +72,9 @@ function setStorageItem(items, key, value) {
 
 function pickAccountName(user) {
   if (!user || typeof user !== 'object') return '';
-  return String(user.email || user.username || user.display_name || user.name || user.id || '').trim();
+  // Prefer the real account/display name over email. New API usually stores
+  // display_name/username alongside email in localStorage.user.
+  return String(user.display_name || user.username || user.name || user.nickname || user.email || user.id || '').trim();
 }
 
 function normalizeIdentityFromPayload(payload) {

@@ -219,6 +219,46 @@ def parse_api_keys(raw: Any) -> list[str]:
     return [k for k in keys if k]
 
 
+def preferred_account_name(identity: Any, fallback: Any = "") -> str:
+    """Prefer the real account/display name over email for account labels."""
+    if isinstance(identity, dict):
+        for key in ("display_name", "username", "name", "nickname", "email", "id"):
+            value = str(identity.get(key) or "").strip()
+            if value:
+                return value
+    return str(fallback or "").strip()
+
+
+def is_email_like(value: Any) -> bool:
+    text = str(value or "").strip()
+    return "@" in text and "." in text.split("@", 1)[-1]
+
+
+def merge_identity_for_import(primary: Any, storage_identity: Any) -> dict[str, Any]:
+    """Merge API/plugin identity with storage identity.
+
+    Some new-api sites return only email from API, while localStorage.user contains
+    the real visible account name in display_name/username.  Storage values are
+    preferred for display fields, while missing fields from the API are retained.
+    """
+    merged: dict[str, Any] = {}
+    if isinstance(primary, dict):
+        merged.update(primary)
+    if isinstance(storage_identity, dict):
+        for key, value in storage_identity.items():
+            if value is None:
+                continue
+            value_text = str(value).strip() if not isinstance(value, (dict, list)) else value
+            if value_text == "":
+                continue
+            # For display fields, localStorage is usually closer to what the user sees.
+            if key in ("display_name", "username", "name", "nickname"):
+                merged[key] = value
+            elif key not in merged or str(merged.get(key) or "").strip() == "":
+                merged[key] = value
+    return merged
+
+
 def validate_account_fields(
     name: str,
     base_url: str,
@@ -1689,6 +1729,45 @@ def parse_account_payload(data: dict[str, Any], require_name: bool = True) -> di
     }
 
 
+def find_duplicate_account(
+    accounts: list[dict[str, Any]],
+    new_account: dict[str, Any],
+    *,
+    ignore_account_index: int = 0,
+) -> dict[str, Any] | None:
+    wanted_url = normalize_base_url(str(new_account.get("base_url") or ""))
+    wanted_name = str(new_account.get("name") or "").strip().lower()
+    if not wanted_url or not wanted_name:
+        return None
+    for account in accounts:
+        if not isinstance(account, dict):
+            continue
+        try:
+            current_index = int(account.get("account_index", 0) or 0)
+        except (TypeError, ValueError):
+            current_index = 0
+        if ignore_account_index and current_index == ignore_account_index:
+            continue
+        account_url = normalize_base_url(str(account.get("base_url") or get_base_url()))
+        account_name = str(account.get("name") or "").strip().lower()
+        if account_url == wanted_url and account_name == wanted_name:
+            return account
+    return None
+
+
+def ensure_unique_account(
+    accounts: list[dict[str, Any]],
+    new_account: dict[str, Any],
+    *,
+    ignore_account_index: int = 0,
+) -> None:
+    duplicate = find_duplicate_account(accounts, new_account, ignore_account_index=ignore_account_index)
+    if duplicate is not None:
+        base_url = normalize_base_url(str(new_account.get("base_url") or ""))
+        name = str(new_account.get("name") or "").strip()
+        raise ValueError(f"账号已存在：相同网站地址和账户名已导入（{base_url} / {name}）")
+
+
 def build_public_accounts(accounts: list[dict[str, Any]]) -> list[dict[str, Any]]:
     signin_store = load_signin_store(normalize_and_persist=True)
     signin_map = signin_store.get("accounts", {}) if isinstance(signin_store.get("accounts"), dict) else {}
@@ -1858,7 +1937,7 @@ def build_auth_account(base_url: str, cookies: list[dict[str, Any]], storage: di
             identity = find_identity_from_storage(storage)
         if identity:
             user_id = str(identity.get("id") or user_id or "").strip()
-            display = str(identity.get("email") or identity.get("username") or identity.get("display_name") or user_id or "").strip()
+            display = preferred_account_name(identity, user_id)
             return {"provider": "new-api", "base_url": base_url, "name": display or f"new-api-{user_id or 'account'}", "new_api_user": user_id, "session": session_value, "cookie": "", "identity": identity, "payload": payload, "notes": notes}
         if not verify_remote:
             host = base_url.split("://", 1)[-1].split("/", 1)[0]
@@ -1876,7 +1955,7 @@ def build_auth_account(base_url: str, cookies: list[dict[str, Any]], storage: di
         else:
             identity = find_identity_from_storage(storage)
         if identity:
-            display = str(identity.get("email") or identity.get("username") or identity.get("name") or identity.get("id") or "").strip()
+            display = preferred_account_name(identity)
             return {"provider": "sub2api", "base_url": base_url, "name": display or "sub2api-account", "new_api_user": "", "session": token, "cookie": cookie_header, "identity": identity, "payload": payload, "notes": notes}
         if not verify_remote:
             return {"provider": "sub2api", "base_url": base_url, "name": "sub2api-account", "new_api_user": "", "session": token, "cookie": cookie_header, "identity": {}, "payload": {}, "notes": notes}
@@ -2121,7 +2200,15 @@ def account_from_qiandao_import_field(import_json: Any, base_url: str) -> dict[s
     account_base_url = normalize_base_url(str(raw.get("base_url") or raw.get("baseUrl") or base_url or "").strip())
     if not account_base_url:
         return None
+    raw_identity = raw.get("identity") if isinstance(raw.get("identity"), dict) else {}
+    storage_identity = find_identity_from_storage(json_import_storage_items(import_json)) or {}
+    raw_identity = merge_identity_for_import(raw_identity, storage_identity)
     name = str(raw.get("name") or "").strip()
+    identity_name = preferred_account_name(raw_identity)
+    # If the plugin/API produced an email as account label, prefer the real
+    # display name/username from merged identity, e.g. gererh instead of x@y.com.
+    if identity_name and (not name or is_email_like(name) or name == str(raw_identity.get("id") or "")):
+        name = identity_name
     new_api_user = str(raw.get("new_api_user") or raw.get("newApiUser") or "").strip()
     cookie = str(raw.get("cookie") or "").strip()
     if provider == "new-api" and not name:
@@ -2136,7 +2223,7 @@ def account_from_qiandao_import_field(import_json: Any, base_url: str) -> dict[s
         "new_api_user": new_api_user,
         "session": session_value,
         "cookie": cookie,
-        "identity": raw.get("identity") if isinstance(raw.get("identity"), dict) else {},
+        "identity": raw_identity,
         "payload": {},
         "notes": ["从浏览器插件 qiandaoAccount 字段直接导入"],
     }
@@ -2178,7 +2265,7 @@ def build_auth_account_from_import_json(import_json: Any, fallback_base_url: str
 
     if identity and str(identity.get("id") or "").strip():
         user_id = str(identity.get("id") or "").strip()
-        display = str(identity.get("email") or identity.get("username") or identity.get("display_name") or user_id).strip()
+        display = preferred_account_name(identity, user_id)
         account = {
             "provider": "new-api",
             "base_url": base_url,
@@ -2226,6 +2313,10 @@ def add_account():
 
     cfg = load_config(normalize_and_persist=False)
     accounts = cfg.get("accounts", [])
+    try:
+        ensure_unique_account(accounts, new_account)
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 409
 
     new_account["account_index"] = get_next_account_index(accounts)
     accounts.append(new_account)
@@ -2284,6 +2375,11 @@ def update_account(account_index: int):
         updated = parse_account_payload(payload, require_name=True)
     except Exception as exc:
         return jsonify({"ok": False, "error": str(exc)}), 400
+
+    try:
+        ensure_unique_account(accounts, updated, ignore_account_index=account_index)
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 409
 
     updated["account_index"] = account_index
     accounts[idx] = updated
@@ -2669,7 +2765,12 @@ def auth_import_json():
         else:
             raise ValueError("请粘贴 JSON 文本")
         account, notes = build_auth_account_from_import_json(import_json)
+        ensure_unique_account(load_config().get("accounts", []), account)
         return jsonify({"ok": True, "account": account, "notes": notes})
+    except ValueError as exc:
+        message = str(exc)
+        status = 409 if "账号已存在" in message else 400
+        return jsonify({"ok": False, "error": message}), status
     except Exception as exc:
         return jsonify({"ok": False, "error": str(exc)}), 400
 
