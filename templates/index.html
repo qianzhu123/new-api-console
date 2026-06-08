@@ -860,23 +860,18 @@
   <div id="add-modal" class="modal-shell" aria-hidden="true">
     <div class="modal-card">
       <h3 class="modal-title">添加账号</h3>
-      <div class="modal-sub">域名地址可直接输入，也可以从已保存账号和地址备注中选择。现在支持粘贴采集 JSON 自动回填账号信息。</div>
-
       <div class="modal-grid">
         <div class="auth-box">
           <label for="m-auth-json">JSON 导入添加</label>
-          <div class="small" style="margin-bottom:8px; line-height:1.55;">
-            JSON 内的 <span class="mono">origin</span> / <span class="mono">page</span> 会自动作为网站地址，不需要额外选择网址。new-api 可粘贴 Cookie Editor 导出的 Cookie JSON 或包含 cookies/visibleCookies 的完整采集 JSON。
-          </div>
           <div class="form-group" style="margin-top:8px;">
-            <label for="m-auth-json">粘贴采集 JSON / Cookie Editor Cookie JSON</label>
-            <textarea id="m-auth-json" placeholder="把你采集到的完整 JSON 粘贴到这里。sub2api 需要 localStorage.auth_token；new-api 需要 session Cookie。注意：不能是 [REDACTED] 脱敏版本。" style="min-height:150px;"></textarea>
+            <label for="m-auth-json">粘贴 JSON</label>
+            <textarea id="m-auth-json" style="min-height:150px;"></textarea>
           </div>
           <div class="auth-actions">
             <button id="btn-auth-import-json" type="button" class="warn">从 JSON 解析并回填</button>
             <button id="btn-auth-clear-json" type="button" class="secondary">清空 JSON</button>
           </div>
-          <div id="auth-status" class="auth-status">请粘贴完整未脱敏 JSON 导入：sub2api 可自动读取 auth_token/auth_user；new-api 支持 Cookie Editor 导出的 Cookie JSON 读取 HttpOnly session，也支持完整采集 JSON 中的 cookies/visibleCookies。</div>
+          <div id="auth-status" class="auth-status"></div>
         </div>
         <div class="form-group">
           <label for="m-name">账号名</label>
@@ -900,7 +895,7 @@
         </div>
         <div class="form-group span-2">
           <label for="m-session">Session / Bearer Token</label>
-          <textarea id="m-session" placeholder="new-api 填 session；sub2api 填 Authorization: Bearer 后面的 JWT"></textarea>
+          <textarea id="m-session"></textarea>
         </div>
         <div class="form-group sub2api-cookie-field">
           <label for="m-stripe-mid">Cookie 字段：__stripe_mid</label>
@@ -1312,7 +1307,7 @@ function setEditFormDisabled(disabled) {
 function resetModalForm() {
   el.mName.value = '';
   el.mBaseUrl.value = '';
-  el.authStatus.textContent = '请粘贴完整未脱敏 JSON，然后点击“从 JSON 解析并回填”。sub2api 可读取 auth_token/auth_user；new-api 可读取 Cookie Editor 导出的 session Cookie，或从采集 JSON 读取用户信息。';
+  el.authStatus.textContent = '';
   el.mAuthJson.value = '';
   el.mProvider.value = 'new-api';
   el.mUser.value = '';
@@ -1363,7 +1358,6 @@ function validatePayload(payload, fields) {
   const errors = [];
   clearFieldStates([fields.name, fields.baseUrl, fields.user, fields.session, fields.cookie]);
   if (!payload.name) { errors.push('账号名不能为空'); setFieldInvalid(fields.name, true); }
-  else if (!/^[A-Za-z0-9_\-.\u4e00-\u9fa5 ]{2,40}$/.test(payload.name)) { errors.push('账号名需为 2-40 个字符，只允许中文、英文、数字、空格、_ - .'); setFieldInvalid(fields.name, true); }
   if (payload.provider === 'new-api' && payload.new_api_user && !/^\d+$/.test(payload.new_api_user)) { errors.push('new_api_user 只能是数字'); setFieldInvalid(fields.user, true); }
   if (!payload.base_url) { errors.push('域名地址不能为空'); setFieldInvalid(fields.baseUrl, true); }
   else if (!/^https?:\/\/.+/.test(payload.base_url)) { errors.push('域名地址格式不正确'); setFieldInvalid(fields.baseUrl, true); }
@@ -1474,6 +1468,16 @@ function getGroupedAccounts() {
     map.get(url).push(acc);
   }
   return Array.from(map.entries()).map(([baseUrl, accounts]) => ({ baseUrl, accounts }));
+}
+
+function getGroupByBaseUrl(baseUrl) {
+  const normalized = normalizeBaseUrlInput(baseUrl);
+  return getGroupedAccounts().find((item) => item.baseUrl === normalized) || null;
+}
+
+function isSub2apiOnlySite(baseUrl) {
+  const group = getGroupByBaseUrl(baseUrl);
+  return !!group && group.accounts.length > 0 && group.accounts.every((acc) => normalizeProvider(acc.provider || 'new-api') === 'sub2api');
 }
 
 function groupKeyFromUrl(url) { return `base:${url}`; }
@@ -2001,7 +2005,7 @@ async function loadSiteInfo(baseUrl) {
     const data = await api(`/api/sites/info?base_url=${encodeURIComponent(normalized)}`);
     state.siteInfo[normalized] = data.site || {};
     renderDetail();
-    if (!data.site?.models_loaded) await refreshSiteModels(normalized, true);
+    if (!data.site?.models_loaded && !isSub2apiOnlySite(normalized)) await refreshSiteModels(normalized, true);
   } catch (e) {
     log(`${normalized} 地址信息加载失败：${e.message || e}`, 'bad2');
     notify('bad2', '地址信息加载失败', `${normalized}：${e.message || e}`);
@@ -2070,6 +2074,7 @@ function renderSiteDetail() {
   const info = state.siteInfo[baseUrl] || {};
   const loading = state.siteLoading[baseUrl] || '';
   const models = Array.isArray(info.models) ? info.models : [];
+  const sub2apiOnly = isSub2apiOnlySite(baseUrl);
   const signText = stats.checkinUnsupported ? '不可签到' : `${stats.signed}/${group.accounts.length}`;
   el.detailEmpty.style.display = 'none';
   el.detailContent.style.display = 'block';
@@ -2116,7 +2121,7 @@ function renderSiteDetail() {
       </div>
       <textarea class="site-remark-editor" data-site-remark maxlength="500" placeholder="填写该地址的备注信息">${escapeHtml(info.remark || '')}</textarea>
     </div>
-    <div class="site-section">
+    ${sub2apiOnly ? '' : `<div class="site-section">
       <div class="site-section-head">
         <div>
           <div class="site-section-title">支持的模型</div>
@@ -2131,7 +2136,7 @@ function renderSiteDetail() {
             ? models.map((model) => `<span class="site-model mono">${escapeHtml(model)}</span>`).join('')
             : `<div class="site-model-empty">${info.models_loaded ? '未发现匹配的 GPT、Claude 或 Gemini 模型。' : '尚未检测模型。'}</div>`}
       </div>
-    </div>
+    </div>`}
   `;
   const saveRemarkButton = el.detailStatus.querySelector('[data-save-site-remark]');
   if (saveRemarkButton) saveRemarkButton.addEventListener('click', () => saveSiteRemark(baseUrl).catch((e) => notify('bad2', '备注保存失败', e.message || String(e))));
@@ -2563,7 +2568,7 @@ async function importAccountJson() {
 
 function clearImportJson() {
   el.mAuthJson.value = '';
-  el.authStatus.textContent = '已清空 JSON。请粘贴完整未脱敏的采集 JSON 后再解析。';
+  el.authStatus.textContent = '已清空 JSON。';
 }
 
 function fillModalFromAuthAccount(account) {

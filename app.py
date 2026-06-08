@@ -268,17 +268,8 @@ def validate_account_fields(
     require_name: bool = True,
     provider: str = "new-api",
 ) -> None:
-    if require_name:
-        if not name:
-            raise ValueError("name is required")
-        if not 2 <= len(name) <= 40:
-            raise ValueError("name length must be between 2 and 40 characters")
-        for ch in name:
-            if ch.isalnum() or ch in " _-.":
-                continue
-            if "\u4e00" <= ch <= "\u9fff":
-                continue
-            raise ValueError("name contains unsupported characters")
+    if require_name and not name:
+        raise ValueError("name is required")
 
     if not base_url:
         raise ValueError("base_url is required")
@@ -885,6 +876,29 @@ def first_account_for_site(base_url: str) -> dict[str, Any] | None:
     return None
 
 
+def first_new_api_account_for_site(base_url: str) -> dict[str, Any] | None:
+    normalized_url = normalize_base_url(base_url)
+    cfg = load_config()
+    for account in cfg.get("accounts", []):
+        if account_provider(account) != "new-api":
+            continue
+        account_url = normalize_base_url(str(account.get("base_url") or get_base_url()))
+        if account_url == normalized_url:
+            return account
+    return None
+
+
+def site_has_provider(base_url: str, provider: str) -> bool:
+    normalized_url = normalize_base_url(base_url)
+    wanted_provider = str(provider or "").strip().lower()
+    cfg = load_config()
+    for account in cfg.get("accounts", []):
+        account_url = normalize_base_url(str(account.get("base_url") or get_base_url()))
+        if account_url == normalized_url and account_provider(account) == wanted_provider:
+            return True
+    return False
+
+
 def filter_supported_models(payload: dict[str, Any]) -> list[str]:
     data = payload.get("data")
     if not isinstance(data, list):
@@ -902,15 +916,27 @@ def filter_supported_models(payload: dict[str, Any]) -> list[str]:
 
 def fetch_site_models(base_url: str) -> tuple[list[str], dict[str, Any], dict[str, Any]]:
     normalized_url = normalize_base_url(base_url)
-    account = first_account_for_site(normalized_url)
+    if site_has_provider(normalized_url, "sub2api"):
+        info = update_site_info(normalized_url, models=[])
+        return [], info, {
+            "provider": "sub2api",
+            "message": "sub2api sites do not use new-api model detection",
+            "skipped": True,
+        }
+    account = first_new_api_account_for_site(normalized_url)
     if account is None:
-        raise ValueError("site has no account")
+        info = update_site_info(normalized_url, models=[])
+        return [], info, {
+            "provider": "unknown",
+            "message": "only new-api sites support model detection",
+            "skipped": True,
+        }
     session_value = str(account.get("session") or "").strip()
     user_id = str(account.get("new_api_user") or "").strip()
     if not session_value:
-        raise ValueError("first account is missing session")
+        raise ValueError("first new-api account is missing session")
     if not user_id:
-        raise ValueError("first account is missing new_api_user")
+        raise ValueError("first new-api account is missing new_api_user")
     headers = build_headers(
         user_id,
         referer=f"{normalized_url}/keys",
@@ -983,24 +1009,39 @@ def parse_api_payload(resp: requests.Response) -> dict[str, Any]:
 
 
 def api_payload_error(payload: dict[str, Any], resp: requests.Response) -> str | None:
-    if resp.ok and payload.get("success") is not False and payload.get("code") not in (-1, 401, 403):
-        return None
+    """Return API error message for both new-api and sub2api style payloads.
+
+    new-api commonly uses {success: true/false}; sub2api uses {code: 0, message: "success"}.
+    Treat any non-zero code as an error instead of accepting all HTTP 2xx responses.
+    """
     message = str(payload.get("message") or payload.get("error") or "").strip()
-    return message or f"http {resp.status_code}"
+    if not resp.ok:
+        return message or f"http {resp.status_code}"
+    if payload.get("success") is False:
+        return message or "api returned success=false"
+    if "code" in payload and str(payload.get("code")) != "0":
+        return message or f"api returned code={payload.get('code')}"
+    return None
 
 
 def normalize_token_groups(payload: dict[str, Any]) -> list[dict[str, Any]]:
     data = payload.get("data")
     groups: list[dict[str, Any]] = []
     if isinstance(data, list):
+        # sub2api: {code:0, data:[{id, name, description, rate_multiplier, ...}]}
         for item in data:
             if not isinstance(item, dict):
                 continue
             group_id = item.get("id")
+            name = str(item.get("name") or group_id or "").strip()
+            description = str(item.get("description") or "").strip()
+            desc = name if not description else f"{name} - {description}"
             groups.append({
                 "id": str(group_id),
-                "desc": str(item.get("name") or item.get("description") or group_id or ""),
+                "name": name,
+                "desc": desc,
                 "ratio": item.get("rate_multiplier"),
+                "platform": item.get("platform"),
             })
         return groups
     if not isinstance(data, dict):
@@ -1008,10 +1049,14 @@ def normalize_token_groups(payload: dict[str, Any]) -> list[dict[str, Any]]:
     for group_id, item in data.items():
         if not isinstance(item, dict):
             continue
+        name = str(item.get("name") or item.get("desc") or group_id or "").strip()
+        description = str(item.get("description") or "").strip()
         groups.append({
             "id": str(group_id),
-            "desc": str(item.get("desc") or item.get("name") or item.get("description") or ""),
+            "name": name,
+            "desc": str(item.get("desc") or (name if not description else f"{name} - {description}") or ""),
             "ratio": item.get("ratio") or item.get("rate_multiplier"),
+            "platform": item.get("platform"),
         })
     return groups
 
@@ -1044,17 +1089,32 @@ def normalize_tokens(payload: dict[str, Any]) -> list[dict[str, Any]]:
     return tokens
 
 
-def normalize_created_token(payload: dict[str, Any], name: str, group: str) -> dict[str, Any]:
+def group_label_from_groups(groups: list[dict[str, Any]], group_id: Any) -> str:
+    wanted = str(group_id or "").strip()
+    if not wanted:
+        return ""
+    for item in groups:
+        if not isinstance(item, dict):
+            continue
+        if str(item.get("id") or "").strip() == wanted:
+            return str(item.get("name") or item.get("desc") or wanted).strip()
+    return wanted
+
+
+def normalize_created_token(payload: dict[str, Any], name: str, group: str, groups: list[dict[str, Any]] | None = None) -> dict[str, Any]:
     data = payload.get("data") if isinstance(payload.get("data"), dict) else {}
     token_key = data.get("key") or data.get("token") or data.get("value") or payload.get("key") or payload.get("token")
     created_group = data.get("group")
     if isinstance(created_group, dict):
         created_group = created_group.get("name") or created_group.get("id")
+    group_id = data.get("group_id") or group
+    group_label = str(created_group or "").strip() or group_label_from_groups(groups or [], group_id)
     return {
         "id": data.get("id") or payload.get("id"),
         "name": str(data.get("name") or name),
         "key": format_token_key(token_key),
-        "group": str(created_group or data.get("group_id") or group),
+        "group": group_label,
+        "group_id": str(group_id or ""),
     }
 
 
@@ -2660,7 +2720,7 @@ def create_token(account_index: int):
             "groups": refreshed_groups,
             "payload": api_response,
         }), 502
-    token = normalize_created_token(api_response, token_name, token_group)
+    token = normalize_created_token(api_response, token_name, token_group, groups=cached_token_groups(account))
     cache_add_token(account, token)
     return jsonify({"ok": True, "token": token, "payload": api_response})
 
