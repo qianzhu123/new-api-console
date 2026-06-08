@@ -54,14 +54,7 @@ qiandao/
 pip install flask requests
 ```
 
-Optional dependency for the browser authorization helper:
-
-```powershell
-pip install playwright
-python -m playwright install chromium
-```
-
-Without Playwright, the normal account management, sign-in, status check, and token functions still work. Only the "授权添加" browser-assisted account capture feature is unavailable.
+No browser automation dependency is required for JSON import. The previous browser authorization entry has been removed from the UI; add-account import now works by pasting a captured JSON document.
 
 2. Prepare `data/session.json`:
 
@@ -146,12 +139,14 @@ run_web.bat
 - Row action `检测`: run single-account check.
 - `添加令牌`: create a token after token groups are loaded.
 - `刷新令牌`: force-refresh token groups and token metadata from the remote site.
-- `添加账号` -> `授权添加`: enter a target website URL, open an isolated Playwright browser, log in manually, then capture supported login information and auto-fill the add-account form.
+- `添加账号` -> `JSON 导入添加`: choose or enter a target website URL from the domain list, paste the captured JSON, then click `从 JSON 解析并回填`.
+- For `sub2api`, the JSON must contain a complete non-redacted `localStorage.auth_token`; `auth_user` is used to fill the account name.
+- For `new-api`, the JSON must contain user identity plus a complete `session` cookie. If the site stores `session` as an HttpOnly cookie, normal page-side JSON cannot read it, so you must manually fill `session` or export cookies with a tool that can read HttpOnly cookies.
 
 ## Notes
 
 - All runtime data is stored under `data/` and ignored by git.
-- Browser authorization uses an isolated local profile under `data/auth_browser/`, which is also ignored by git.
+- The JSON import website list is built from saved account domain addresses, saved site info entries, and the default domain address.
 - On startup, old root-level files (`session.json`, `quota_history.json`, `signin_status.json`) are migrated automatically into `data/`.
 - If UI looks stale after update, restart backend and hard refresh browser (`Ctrl+F5`).
 

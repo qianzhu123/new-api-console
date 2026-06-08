@@ -4,7 +4,6 @@ import pathlib
 import tempfile
 import threading
 import time
-import uuid
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 from typing import Any, Callable
@@ -86,9 +85,6 @@ app = Flask(__name__)
 app.config["TEMPLATES_AUTO_RELOAD"] = True
 app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 0
 config_lock = threading.RLock()
-auth_lock = threading.RLock()
-auth_sessions: dict[str, dict[str, Any]] = {}
-AUTH_BROWSER_DIR = DATA_DIR / "auth_browser"
 
 
 
@@ -184,6 +180,15 @@ def collect_known_base_urls(config: dict[str, Any] | None = None) -> list[str]:
     for account in cfg.get("accounts", []) if isinstance(cfg, dict) else []:
         if isinstance(account, dict):
             add_one(account.get("base_url"))
+
+    try:
+        site_store = load_site_info()
+        sites = site_store.get("sites") if isinstance(site_store, dict) else {}
+        if isinstance(sites, dict):
+            for site_url in sites.keys():
+                add_one(site_url)
+    except Exception:
+        pass
 
     add_one(get_base_url())
     return values
@@ -1709,16 +1714,6 @@ def build_public_accounts(accounts: list[dict[str, Any]]) -> list[dict[str, Any]
     return out
 
 
-def _require_playwright():
-    try:
-        from playwright.sync_api import sync_playwright
-    except Exception as exc:
-        raise RuntimeError(
-            "Playwright is not installed. Run: pip install playwright && python -m playwright install chromium"
-        ) from exc
-    return sync_playwright
-
-
 def extract_cookie_header(cookies: list[dict[str, Any]]) -> str:
     return "; ".join(
         f"{item.get('name')}={item.get('value')}"
@@ -1732,6 +1727,19 @@ def cookie_value(cookies: list[dict[str, Any]], name: str) -> str:
         if item.get("name") == name:
             return str(item.get("value") or "").strip()
     return ""
+
+
+def cookie_header_to_list(cookie_header: str) -> list[dict[str, Any]]:
+    cookies: list[dict[str, Any]] = []
+    for part in str(cookie_header or "").split(";"):
+        part = part.strip()
+        if not part or "=" not in part:
+            continue
+        name, value = part.split("=", 1)
+        name = name.strip()
+        if name:
+            cookies.append({"name": name, "value": value.strip()})
+    return cookies
 
 
 def flatten_storage_values(storage: dict[str, Any]) -> list[str]:
@@ -1824,7 +1832,7 @@ def request_sub2api_self_for_auth(base_url: str, token: str, cookie_header: str)
     return payload, data, None
 
 
-def build_auth_account(base_url: str, cookies: list[dict[str, Any]], storage: dict[str, Any]) -> dict[str, Any]:
+def build_auth_account(base_url: str, cookies: list[dict[str, Any]], storage: dict[str, Any], *, verify_remote: bool = True) -> dict[str, Any]:
     base_url = normalize_base_url(base_url)
     cookie_header = extract_cookie_header(cookies)
     session_value = cookie_value(cookies, "session")
@@ -1833,32 +1841,184 @@ def build_auth_account(base_url: str, cookies: list[dict[str, Any]], storage: di
     notes: list[str] = []
 
     if session_value:
-        payload, identity, error = request_new_api_self_for_auth(base_url, session_value, user_id)
-        if identity is None and not user_id:
-            for candidate in flatten_storage_values(storage):
-                if candidate.isdigit():
-                    payload, identity, error = request_new_api_self_for_auth(base_url, session_value, candidate)
-                    if identity:
-                        user_id = candidate
-                        break
+        payload: dict[str, Any] = {}
+        identity: dict[str, Any] | None = None
+        error: str | None = None
+        if verify_remote:
+            payload, identity, error = request_new_api_self_for_auth(base_url, session_value, user_id)
+            if identity is None and not user_id:
+                for candidate in flatten_storage_values(storage):
+                    if candidate.isdigit():
+                        payload, identity, error = request_new_api_self_for_auth(base_url, session_value, candidate)
+                        if identity:
+                            user_id = candidate
+                            break
+        else:
+            identity = find_identity_from_storage(storage)
         if identity:
             user_id = str(identity.get("id") or user_id or "").strip()
             display = str(identity.get("email") or identity.get("username") or identity.get("display_name") or user_id or "").strip()
             return {"provider": "new-api", "base_url": base_url, "name": display or f"new-api-{user_id or 'account'}", "new_api_user": user_id, "session": session_value, "cookie": "", "identity": identity, "payload": payload, "notes": notes}
+        if not verify_remote and user_id:
+            return {"provider": "new-api", "base_url": base_url, "name": f"new-api-{user_id}", "new_api_user": user_id, "session": session_value, "cookie": "", "identity": {}, "payload": {}, "notes": notes}
         notes.append(error or "new-api self endpoint did not return identity")
 
     if token:
-        payload, identity, error = request_sub2api_self_for_auth(base_url, token, cookie_header)
+        payload: dict[str, Any] = {}
+        identity: dict[str, Any] | None = None
+        error: str | None = None
+        if verify_remote:
+            payload, identity, error = request_sub2api_self_for_auth(base_url, token, cookie_header)
+        else:
+            identity = find_identity_from_storage(storage)
         if identity:
             display = str(identity.get("email") or identity.get("username") or identity.get("name") or identity.get("id") or "").strip()
             return {"provider": "sub2api", "base_url": base_url, "name": display or "sub2api-account", "new_api_user": "", "session": token, "cookie": cookie_header, "identity": identity, "payload": payload, "notes": notes}
+        if not verify_remote:
+            return {"provider": "sub2api", "base_url": base_url, "name": "sub2api-account", "new_api_user": "", "session": token, "cookie": cookie_header, "identity": {}, "payload": {}, "notes": notes}
         notes.append(error or "sub2api self endpoint did not return identity")
 
     raise ValueError("Could not detect a supported login session. Please make sure login is complete, then try capture again. " + " | ".join(notes))
 
 
-def auth_session_public(session_id: str, item: dict[str, Any]) -> dict[str, Any]:
-    return {"session_id": session_id, "base_url": item.get("base_url"), "created_at": item.get("created_at"), "last_status": item.get("last_status")}
+def parse_possible_json_value(value: Any) -> Any:
+    if isinstance(value, (dict, list)):
+        return value
+    if not isinstance(value, str):
+        return value
+    text = value.strip()
+    if not text:
+        return value
+    if text[0] not in "[{\"" and text.lower() not in ("true", "false", "null"):
+        return value
+    try:
+        return json.loads(text)
+    except Exception:
+        return value
+
+
+def find_identity_from_storage(storage: dict[str, Any]) -> dict[str, Any] | None:
+    preferred_keys = ("user", "auth_user", "current_user", "profile", "account")
+    for store_name in ("localStorage", "sessionStorage"):
+        store = storage.get(store_name)
+        if not isinstance(store, dict):
+            continue
+        for key, value in store.items():
+            parsed = parse_possible_json_value(value)
+            if isinstance(parsed, dict):
+                key_l = str(key).lower()
+                if key_l in preferred_keys or any(k in key_l for k in preferred_keys):
+                    if any(str(parsed.get(k) or "").strip() for k in ("id", "email", "username", "display_name", "name")):
+                        return parsed
+        for value in store.values():
+            parsed = parse_possible_json_value(value)
+            if isinstance(parsed, dict) and any(str(parsed.get(k) or "").strip() for k in ("id", "email", "username", "display_name", "name")):
+                return parsed
+    return None
+
+
+def json_import_storage_items(import_json: dict[str, Any]) -> dict[str, Any]:
+    storage_scan = import_json.get("storageScan") if isinstance(import_json, dict) else {}
+    storage: dict[str, Any] = {"localStorage": {}, "sessionStorage": {}, "href": str(import_json.get("page") or "")}
+    for source_name, target_name in (("localStorage", "localStorage"), ("sessionStorage", "sessionStorage")):
+        source = storage_scan.get(source_name) if isinstance(storage_scan, dict) else {}
+        items = source.get("items") if isinstance(source, dict) else None
+        out: dict[str, str] = {}
+        if isinstance(items, list):
+            for item in items:
+                if not isinstance(item, dict):
+                    continue
+                key = str(item.get("key") or "").strip()
+                if not key:
+                    continue
+                value = item.get("value")
+                if isinstance(value, (dict, list)):
+                    out[key] = json.dumps(value, ensure_ascii=False)
+                else:
+                    out[key] = str(value or "")
+        elif isinstance(source, dict):
+            for key, value in source.items():
+                if key in ("storageName", "matchedCount", "items"):
+                    continue
+                out[str(key)] = json.dumps(value, ensure_ascii=False) if isinstance(value, (dict, list)) else str(value or "")
+        storage[target_name] = out
+    return storage
+
+
+def json_import_cookies(import_json: dict[str, Any]) -> list[dict[str, Any]]:
+    visible = import_json.get("visibleCookies") if isinstance(import_json, dict) else {}
+    raw_cookies = visible.get("cookies") if isinstance(visible, dict) else []
+    cookies: list[dict[str, Any]] = []
+    if isinstance(raw_cookies, list):
+        for item in raw_cookies:
+            if not isinstance(item, dict):
+                continue
+            name = str(item.get("name") or "").strip()
+            value = item.get("value")
+            if value is None:
+                value = item.get("valuePreview")
+            value = str(value or "").strip()
+            if name and value:
+                cookies.append({"name": name, "value": value})
+    return cookies
+
+
+def contains_redacted_value(value: Any) -> bool:
+    if isinstance(value, dict):
+        return any(contains_redacted_value(v) for v in value.values())
+    if isinstance(value, list):
+        return any(contains_redacted_value(v) for v in value)
+    return "[REDACTED]" in str(value)
+
+
+def build_auth_account_from_import_json(import_json: dict[str, Any], fallback_base_url: str = "") -> tuple[dict[str, Any], list[str]]:
+    if not isinstance(import_json, dict):
+        raise ValueError("请粘贴完整 JSON 对象")
+    base_url = normalize_base_url(str(import_json.get("origin") or import_json.get("page") or fallback_base_url or ""))
+    if not base_url:
+        raise ValueError("JSON 中缺少 origin/page，无法识别域名地址")
+    storage = json_import_storage_items(import_json)
+    cookies = json_import_cookies(import_json)
+    notes: list[str] = []
+    token = find_auth_token_from_storage(storage)
+    session_value = cookie_value(cookies, "session")
+    identity = find_identity_from_storage(storage) or {}
+
+    if token:
+        if contains_redacted_value(token):
+            raise ValueError("JSON 中的 auth_token 已被 [REDACTED] 脱敏，不能作为 Bearer Token 使用；请粘贴未脱敏的完整 JSON。")
+        account = build_auth_account(base_url, cookies, storage, verify_remote=False)
+        account["notes"] = ["从粘贴 JSON 导入：localStorage.auth_token 作为 sub2api Bearer Token"]
+        return account, notes
+
+    if session_value:
+        if contains_redacted_value(session_value):
+            raise ValueError("JSON 中的 session 已被 [REDACTED] 脱敏，不能使用；请粘贴未脱敏的完整 Cookie。")
+        account = build_auth_account(base_url, cookies, storage, verify_remote=False)
+        account["notes"] = ["从粘贴 JSON 导入：Cookie session 作为 new-api session"]
+        return account, notes
+
+    if identity and str(identity.get("id") or "").strip():
+        user_id = str(identity.get("id") or "").strip()
+        display = str(identity.get("email") or identity.get("username") or identity.get("display_name") or user_id).strip()
+        account = {
+            "provider": "new-api",
+            "base_url": base_url,
+            "name": display or f"new-api-{user_id}",
+            "new_api_user": user_id,
+            "session": "",
+            "cookie": "",
+            "identity": identity,
+            "payload": {},
+            "notes": [
+                "JSON 中已识别到 new-api 用户信息和 new_api_user",
+                "但没有 session Cookie；该 Cookie 通常是 HttpOnly，普通网页 JSON 无法读取，需要手动补充 session 后再创建账号",
+            ],
+        }
+        notes.extend(account["notes"])
+        return account, notes
+
+    raise ValueError("没有在 JSON 中找到可用字段：new-api 需要用户信息或 Cookie session；sub2api 需要 localStorage.auth_token。")
 
 
 @app.route("/")
@@ -2319,88 +2479,22 @@ def site_models():
     return jsonify({"ok": True, "models": models, "site": info, "payload": api_response})
 
 
-@app.route("/api/auth/start", methods=["POST"])
-def auth_start():
-    payload = request.get_json(force=True)
-    base_url = normalize_base_url(str(payload.get("base_url") or "").strip()) if isinstance(payload, dict) else ""
-    if not base_url:
-        return jsonify({"ok": False, "error": "base_url is required"}), 400
+@app.route("/api/auth/import-json", methods=["POST"])
+def auth_import_json():
     try:
-        sync_playwright = _require_playwright()
-        playwright = sync_playwright().start()
-        AUTH_BROWSER_DIR.mkdir(parents=True, exist_ok=True)
-        session_id = uuid.uuid4().hex[:12]
-        user_data_dir = AUTH_BROWSER_DIR / session_id
-        context = playwright.chromium.launch_persistent_context(user_data_dir=str(user_data_dir), headless=False, viewport={"width": 1280, "height": 860})
-        page = context.pages[0] if context.pages else context.new_page()
-        page.goto(base_url, wait_until="domcontentloaded", timeout=60000)
-        item = {"playwright": playwright, "context": context, "page": page, "base_url": base_url, "created_at": now_ts(), "last_status": "browser opened"}
-        with auth_lock:
-            auth_sessions[session_id] = item
-        return jsonify({"ok": True, "auth": auth_session_public(session_id, item)})
+        payload = request.get_json(force=True)
+        raw = payload.get("json") if isinstance(payload, dict) else payload
+        if isinstance(raw, str):
+            import_json = json.loads(raw)
+        elif isinstance(raw, dict):
+            import_json = raw
+        else:
+            raise ValueError("请粘贴 JSON 文本")
+        fallback_base_url = str(payload.get("base_url") or "") if isinstance(payload, dict) else ""
+        account, notes = build_auth_account_from_import_json(import_json, fallback_base_url=fallback_base_url)
+        return jsonify({"ok": True, "account": account, "notes": notes})
     except Exception as exc:
-        return jsonify({"ok": False, "error": str(exc)}), 500
-
-
-@app.route("/api/auth/capture", methods=["POST"])
-def auth_capture():
-    payload = request.get_json(force=True)
-    session_id = str(payload.get("session_id") or "").strip() if isinstance(payload, dict) else ""
-    if not session_id:
-        return jsonify({"ok": False, "error": "session_id is required"}), 400
-    with auth_lock:
-        item = auth_sessions.get(session_id)
-    if not item:
-        return jsonify({"ok": False, "error": "auth session not found or already closed"}), 404
-    try:
-        context = item["context"]
-        page = item["page"]
-        base_url = normalize_base_url(str(item.get("base_url") or page.url or ""))
-        cookies = context.cookies(base_url)
-        storage = page.evaluate("""() => {
-            const dump = (store) => {
-              const out = {};
-              for (let i = 0; i < store.length; i += 1) {
-                const key = store.key(i);
-                out[key] = store.getItem(key);
-              }
-              return out;
-            };
-            return { localStorage: dump(window.localStorage), sessionStorage: dump(window.sessionStorage), href: location.href };
-        }""")
-        account = build_auth_account(base_url, cookies, storage if isinstance(storage, dict) else {})
-        item["last_status"] = "captured"
-        return jsonify({"ok": True, "account": account, "auth": auth_session_public(session_id, item)})
-    except Exception as exc:
-        item["last_status"] = f"capture failed: {exc}"
-        return jsonify({"ok": False, "error": str(exc), "auth": auth_session_public(session_id, item)}), 400
-
-
-@app.route("/api/auth/stop", methods=["POST"])
-def auth_stop():
-    payload = request.get_json(force=True, silent=True) or {}
-    session_id = str(payload.get("session_id") or "").strip()
-    if not session_id:
-        return jsonify({"ok": False, "error": "session_id is required"}), 400
-    with auth_lock:
-        item = auth_sessions.pop(session_id, None)
-    if not item:
-        return jsonify({"ok": True, "stopped": False})
-    for key in ("context", "playwright"):
-        obj = item.get(key)
-        if obj:
-            try:
-                obj.close() if key == "context" else obj.stop()
-            except Exception:
-                pass
-    return jsonify({"ok": True, "stopped": True})
-
-
-@app.route("/api/auth/state", methods=["GET"])
-def auth_state():
-    with auth_lock:
-        sessions = [auth_session_public(k, v) for k, v in auth_sessions.items()]
-    return jsonify({"ok": True, "sessions": sessions})
+        return jsonify({"ok": False, "error": str(exc)}), 400
 
 
 @app.route("/api/system/status", methods=["GET"])
