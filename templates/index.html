@@ -1225,14 +1225,29 @@ function escapeHtml(v) {
 function getQuotaPerUnit(sys) { const n = Number(sys?.quota_per_unit); return Number.isFinite(n) && n > 0 ? n : null; }
 function getMoneySymbol(sys) {
   const displayType = quoteText(sys?.quota_display_type).trim().toUpperCase();
+  if (displayType === 'RAW') return '';
   if (displayType === 'USD') return '$';
   if (['CNY', 'RMB', 'CNH'].includes(displayType)) return '￥';
   const customSymbol = quoteText(sys?.custom_currency_symbol).trim();
   if (customSymbol && customSymbol !== '¤') return customSymbol;
   return displayType === 'CUSTOM' ? '￥' : '$';
 }
-function quotaToMoney(rawQuota, sys) { const q = Number(rawQuota); const unit = getQuotaPerUnit(sys); if (!Number.isFinite(q) || !unit) return null; return q / unit; }
-function formatMoney(v, sys, withSign = false) { if (!Number.isFinite(v)) return '-'; const symbol = getMoneySymbol(sys); const sign = withSign ? (v >= 0 ? '+' : '') : ''; return `${sign}${symbol}${v.toFixed(2)}`; }
+function quotaToMoney(rawQuota, sys) {
+  const q = Number(rawQuota);
+  if (!Number.isFinite(q)) return null;
+  if (quoteText(sys?.quota_display_type).trim().toUpperCase() === 'RAW') return q;
+  const unit = getQuotaPerUnit(sys);
+  if (!unit) return null;
+  return q / unit;
+}
+function formatMoney(v, sys, withSign = false) {
+  if (!Number.isFinite(v)) return '-';
+  const raw = quoteText(sys?.quota_display_type).trim().toUpperCase() === 'RAW';
+  const sign = withSign ? (v >= 0 ? '+' : '') : '';
+  if (raw) return `${sign}${Number.isInteger(v) ? String(v) : v.toFixed(2).replace(/\.?0+$/, '')}`;
+  const symbol = getMoneySymbol(sys);
+  return `${sign}${symbol}${v.toFixed(2)}`;
+}
 function formatShortTs(ts) { const s = quoteText(ts).trim(); if (!s) return '-'; const m = s.match(/^(\d{4})-(\d{2})-(\d{2})\s+(\d{2}:\d{2}:\d{2})$/); return m ? `${m[2]}-${m[3]} ${m[4]}` : s; }
 function accountKey(acc) { return String(acc?.account_index || ''); }
 function findAccountByKey(key) { return state.accounts.find((a) => accountKey(a) === String(key)) || null; }
@@ -1267,6 +1282,7 @@ function normalizeBaseUrlInput(value) {
 const PROVIDER_OPTIONS = [
   { value: 'new-api', label: 'new-api' },
   { value: 'sub2api', label: 'sub2api' },
+  { value: 'custom', label: '自定义网站' },
 ];
 
 function normalizeProvider(value) {
@@ -1274,14 +1290,16 @@ function normalizeProvider(value) {
   return PROVIDER_OPTIONS.some((item) => item.value === v) ? v : 'new-api';
 }
 
+function isCustomProviderValue(value) { return normalizeProvider(value) === 'custom'; }
+
 function parseCookieFields(cookieText = '') {
-  const out = { __stripe_mid: '', __stripe_sid: '' };
+  const out = { __stripe_mid: '', __stripe_sid: '', auth_token: '' };
   for (const part of String(cookieText || '').split(';')) {
     const idx = part.indexOf('=');
     if (idx < 0) continue;
     const key = part.slice(0, idx).trim();
     const value = part.slice(idx + 1).trim();
-    if (key === '__stripe_mid' || key === '__stripe_sid') out[key] = value;
+    if (key === '__stripe_mid' || key === '__stripe_sid' || key === 'auth_token') out[key] = value;
   }
   return out;
 }
@@ -1295,7 +1313,7 @@ function cleanCookieFieldValue(value, cookieName) {
   return v;
 }
 
-function buildCookieFromFields(stripeMid, stripeSid, originalCookie = '') {
+function buildCookieFromFields(stripeMid, stripeSid, originalCookie = '', authToken = '') {
   const map = new Map();
   for (const part of String(originalCookie || '').split(';')) {
     const idx = part.indexOf('=');
@@ -1308,6 +1326,8 @@ function buildCookieFromFields(stripeMid, stripeSid, originalCookie = '') {
   const sid = cleanCookieFieldValue(stripeSid, '__stripe_sid');
   if (mid) map.set('__stripe_mid', mid); else map.delete('__stripe_mid');
   if (sid) map.set('__stripe_sid', sid); else map.delete('__stripe_sid');
+  const auth = cleanCookieFieldValue(authToken, 'auth_token');
+  if (auth) map.set('auth_token', auth);
   return Array.from(map.entries()).map(([key, value]) => `${key}=${value}`).join('; ');
 }
 
@@ -1316,7 +1336,9 @@ function syncCookieHidden(scope) {
   const cookie = isModal ? el.mCookie : el.fCookie;
   const mid = isModal ? el.mStripeMid : el.fStripeMid;
   const sid = isModal ? el.mStripeSid : el.fStripeSid;
-  cookie.value = buildCookieFromFields(mid.value, sid.value, cookie.value);
+  const session = isModal ? el.mSession : el.fSession;
+  const authToken = normalizeProvider(isModal ? el.mProvider.value : el.fProvider.value) === 'custom' ? session.value : '';
+  cookie.value = buildCookieFromFields(mid.value, sid.value, cookie.value, authToken);
 }
 
 function bindBaseUrlNormalizer(node) {
@@ -1470,7 +1492,8 @@ function closeAddModal() {
 
 function buildPayloadFromInputs(fields) {
   if (fields.stripeMid && fields.stripeSid) {
-    fields.cookie.value = buildCookieFromFields(fields.stripeMid.value, fields.stripeSid.value, fields.cookie.value);
+    const provider = normalizeProvider(fields.provider.value);
+    fields.cookie.value = buildCookieFromFields(fields.stripeMid.value, fields.stripeSid.value, fields.cookie.value, provider === 'custom' ? fields.session.value : '');
   }
   return {
     name: fields.name.value.trim(),
@@ -1554,6 +1577,45 @@ function displayIndexByKey(key) {
   return idx >= 0 ? idx + 1 : '-';
 }
 
+function attachGroupDragEvents(tr, baseUrl) {
+  tr.draggable = true;
+  tr.addEventListener('dragstart', (e) => {
+    state.dragKey = groupKeyFromUrl(baseUrl);
+    tr.classList.add('dragging');
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', state.dragKey);
+  });
+  tr.addEventListener('dragend', () => {
+    state.dragKey = null;
+    tr.classList.remove('dragging', 'drag-over-top', 'drag-over-bottom');
+    for (const row of el.body.querySelectorAll('tr')) row.classList.remove('drag-over-top', 'drag-over-bottom');
+  });
+  tr.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    const fromKey = state.dragKey || e.dataTransfer.getData('text/plain');
+    const thisKey = groupKeyFromUrl(baseUrl);
+    if (!fromKey || fromKey === thisKey || !fromKey.startsWith('base:')) return;
+    const rect = tr.getBoundingClientRect();
+    const before = e.clientY < rect.top + rect.height / 2;
+    tr.classList.toggle('drag-over-top', before);
+    tr.classList.toggle('drag-over-bottom', !before);
+  });
+  tr.addEventListener('dragleave', () => {
+    tr.classList.remove('drag-over-top', 'drag-over-bottom');
+  });
+  tr.addEventListener('drop', async (e) => {
+    e.preventDefault();
+    tr.classList.remove('drag-over-top', 'drag-over-bottom');
+    const fromKey = state.dragKey || e.dataTransfer.getData('text/plain');
+    const thisKey = groupKeyFromUrl(baseUrl);
+    if (!fromKey || fromKey === thisKey || !fromKey.startsWith('base:')) return;
+    const fromBaseUrl = fromKey.slice('base:'.length);
+    const rect = tr.getBoundingClientRect();
+    const before = e.clientY < rect.top + rect.height / 2;
+    await reorderAccountGroups(fromBaseUrl, baseUrl, before);
+  });
+}
+
 function attachDragEvents(tr, key) {
   tr.draggable = true;
   tr.addEventListener('dragstart', (e) => {
@@ -1609,9 +1671,31 @@ function isSub2apiOnlySite(baseUrl) {
   return !!group && group.accounts.length > 0 && group.accounts.every((acc) => normalizeProvider(acc.provider || 'new-api') === 'sub2api');
 }
 
+function isE2ezSite(baseUrl) {
+  try {
+    return new URL(normalizeBaseUrlInput(baseUrl)).hostname === 'api.e2ez.com';
+  } catch {
+    return false;
+  }
+}
+
+function isCustomAuthCookieSite(baseUrl) {
+  try {
+    return new URL(normalizeBaseUrlInput(baseUrl)).hostname === 'free.supxh.xin';
+  } catch {
+    return false;
+  }
+}
+
+function siteHasDedicatedCheckin(baseUrl) {
+  return isE2ezSite(baseUrl) || isCustomAuthCookieSite(baseUrl);
+}
+
 function groupKeyFromUrl(url) { return `base:${url}`; }
 
 function accountCheckinUnsupported(acc) {
+  const baseUrl = normalizeBaseUrlInput(acc?.base_url || state.defaultBaseUrl);
+  if (siteHasDedicatedCheckin(baseUrl) || normalizeProvider(acc?.provider) === 'custom') return false;
   const key = accountKey(acc);
   if ((state.signinStatus[key] || acc.signin_status) === '不可签到') return true;
   if (state.checkinResults[key]?.state === 'UNSUPPORTED') return true;
@@ -1627,6 +1711,7 @@ function markAccountSiteCheckinUnsupported(key) {
   const account = findAccountByKey(key);
   if (!account) return;
   const baseUrl = normalizeBaseUrlInput(account.base_url || state.defaultBaseUrl);
+  if (siteHasDedicatedCheckin(baseUrl) || normalizeProvider(account.provider) === 'custom') return;
   for (const item of state.accounts) {
     if (normalizeBaseUrlInput(item.base_url || state.defaultBaseUrl) !== baseUrl) continue;
     state.signinStatus[accountKey(item)] = '不可签到';
@@ -1674,7 +1759,7 @@ function renderGroupRow(group) {
   const tr = document.createElement('tr');
   tr.className = 'group-row';
   if (state.selectedSite === group.baseUrl) tr.classList.add('selected');
-  tr.title = '单击查看地址详情，双击展开或折叠';
+  tr.title = '单击查看地址详情；按住地址行或拖动 ☰ 可移动地址分组；双击展开或折叠';
   tr.addEventListener('click', (e) => {
     if (e.target.closest('button')) return;
     selectSite(group.baseUrl);
@@ -1684,6 +1769,7 @@ function renderGroupRow(group) {
     state.collapsedGroups[key] = !state.collapsedGroups[key];
     renderTable();
   });
+  attachGroupDragEvents(tr, group.baseUrl);
   tr.innerHTML = `
     <td class="group-cell" colspan="8">
       <div class="group-box">
@@ -1691,6 +1777,7 @@ function renderGroupRow(group) {
           <button type="button" class="fold-btn" data-group-action="toggle" data-group-key="${key}" title="${collapsed ? '展开' : '折叠'}">
             <span class="fold-icon ${collapsed ? '' : 'expanded'}" aria-hidden="true"></span>
           </button>
+          <span class="drag-handle group-drag-handle" title="拖动地址分组排序" aria-label="拖动地址分组排序">☰</span>
           <span class="group-url mono">${group.baseUrl}</span>
           <span class="group-stats">
             <span class="group-stat">账号数 ${group.accounts.length}</span>
@@ -1842,6 +1929,10 @@ function tokenDisplayKey(key, token) {
 function renderTokenPanel(acc) {
   const panel = document.getElementById('token-panel');
   if (!panel || !acc) return;
+  if (normalizeProvider(acc.provider) === 'custom') {
+    panel.innerHTML = '<div class="token-empty">自定义网站令牌有且只有一个，不支持在此创建、删除或修改令牌。</div>';
+    return;
+  }
   const key = accountKey(acc);
   const tokens = state.tokens[key] || [];
   const busy = tokenBusyText(key);
@@ -2594,6 +2685,42 @@ function copyTextFallback(value) {
   if (!copied) throw new Error('浏览器拒绝了剪贴板访问');
 }
 
+async function persistAccountOrder(successMessage = '账号顺序已更新') {
+  await api('/api/accounts/reorder', {
+    method: 'POST',
+    body: JSON.stringify({ ordered_ids: state.accounts.map((acc) => Number(acc.account_index)) })
+  });
+  log(successMessage, 'ok');
+  notify('ok', '排序已更新', '序号已随之变化。');
+  if (state.selected) state.selected = findAccountByKey(accountKey(state.selected));
+}
+
+async function reorderAccountGroups(fromBaseUrl, toBaseUrl, before) {
+  const fromUrl = normalizeBaseUrlInput(fromBaseUrl);
+  const toUrl = normalizeBaseUrlInput(toBaseUrl);
+  if (!fromUrl || !toUrl || fromUrl === toUrl) return;
+  state.sortField = 'manual';
+  if (el.sortField) el.sortField.value = 'manual';
+  const moving = state.accounts.filter((acc) => normalizeBaseUrlInput(acc.base_url || state.defaultBaseUrl) === fromUrl);
+  if (!moving.length) return;
+  const rest = state.accounts.filter((acc) => normalizeBaseUrlInput(acc.base_url || state.defaultBaseUrl) !== fromUrl);
+  let insertIndex = rest.findIndex((acc) => normalizeBaseUrlInput(acc.base_url || state.defaultBaseUrl) === toUrl);
+  if (insertIndex < 0) return;
+  if (!before) {
+    while (insertIndex < rest.length && normalizeBaseUrlInput(rest[insertIndex].base_url || state.defaultBaseUrl) === toUrl) insertIndex += 1;
+  }
+  state.accounts = [...rest.slice(0, insertIndex), ...moving, ...rest.slice(insertIndex)];
+  renderTable();
+  renderDetail();
+  try {
+    await persistAccountOrder('地址分组顺序已更新');
+  } catch (e) {
+    log(`地址排序失败：${e.message}`, 'bad2');
+    notify('bad2', '地址排序失败', e.message || String(e));
+    await refreshAccounts();
+  }
+}
+
 async function reorderAccounts(fromKey, toKey, before) {
   const fromIndex = state.accounts.findIndex((acc) => accountKey(acc) === String(fromKey));
   const toIndex = state.accounts.findIndex((acc) => accountKey(acc) === String(toKey));
@@ -2608,13 +2735,7 @@ async function reorderAccounts(fromKey, toKey, before) {
   renderTable();
   renderDetail();
   try {
-    await api('/api/accounts/reorder', {
-      method: 'POST',
-      body: JSON.stringify({ ordered_ids: state.accounts.map((acc) => Number(acc.account_index)) })
-    });
-    log('账号顺序已更新', 'ok');
-    notify('ok', '排序已更新', '账号可上下拖动，序号已随之变化。');
-    if (state.selected) state.selected = findAccountByKey(accountKey(state.selected));
+    await persistAccountOrder('账号顺序已更新');
   } catch (e) {
     log(`排序失败：${e.message}`, 'bad2');
     notify('bad2', '排序失败', e.message || String(e));
@@ -2927,16 +3048,39 @@ window.addEventListener('keydown', (e) => {
 window.addEventListener('resize', fitMetricValues);
 function updateProviderHints(scope) {
   const isModal = scope === 'modal';
-  const provider = normalizeProvider((isModal ? el.mProvider : el.fProvider).value || 'new-api');
+  const provider = normalizeProvider(isModal ? el.mProvider.value : el.fProvider.value);
   const user = isModal ? el.mUser : el.fUser;
-  const root = isModal ? el.addModal : document.getElementById('edit-panel');
-  user.disabled = provider === 'sub2api';
-  user.placeholder = '';
-  if (provider === 'sub2api') user.value = '';
-  for (const node of root.querySelectorAll('.sub2api-cookie-field')) {
-    node.style.display = provider === 'sub2api' ? 'block' : 'none';
+  const session = isModal ? el.mSession : el.fSession;
+  const cookie = isModal ? el.mCookie : el.fCookie;
+  const mid = isModal ? el.mStripeMid : el.fStripeMid;
+  const sid = isModal ? el.mStripeSid : el.fStripeSid;
+  const fields = document.querySelectorAll(isModal ? '#add-modal .sub2api-cookie-field' : '#edit-panel .sub2api-cookie-field');
+  const showStripe = provider === 'sub2api';
+  for (const node of fields) node.style.display = showStripe ? '' : 'none';
+  if (provider === 'sub2api') {
+    user.value = '';
+    user.disabled = true;
+    session.previousElementSibling.textContent = 'Bearer Token';
+    session.placeholder = '粘贴 localStorage.auth_token 或 Bearer Token';
+  } else if (provider === 'custom') {
+    user.disabled = false;
+    user.previousElementSibling.textContent = '用户标识（可选）';
+    session.previousElementSibling.textContent = 'auth_token';
+    session.placeholder = '粘贴 auth_token Cookie 的值；JSON 导入会自动填充';
+    mid.value = '';
+    sid.value = '';
+    cookie.value = buildCookieFromFields('', '', cookie.value, session.value);
+  } else {
+    user.disabled = false;
+    user.previousElementSibling.textContent = 'new_api_user';
+    session.previousElementSibling.textContent = 'Session / Bearer Token';
+    session.placeholder = '';
+    mid.value = '';
+    sid.value = '';
+    cookie.value = buildCookieFromFields('', '', cookie.value);
   }
 }
+
 el.fProvider.addEventListener('change', () => updateProviderHints('edit'));
 el.mProvider.addEventListener('change', () => updateProviderHints('modal'));
 for (const node of [el.fName, el.fBaseUrl, el.fUser, el.fSession, el.fCookie, el.fStripeMid, el.fStripeSid, el.mName, el.mBaseUrl, el.mUser, el.mSession, el.mCookie, el.mStripeMid, el.mStripeSid]) {

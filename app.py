@@ -28,6 +28,8 @@ DEFAULT_BASE_URL = "https://www.new-api.com"
 BASE_URL_ENV_KEY = "NEW_API_BASE_URL"
 CHECKIN_PATH = "/api/user/checkin"
 E2EZ_CHECKIN_DRAW_PATH = "/checkin/api/draw"
+CUSTOM_SIGNIN_PATH = "/api/user/signin"
+CUSTOM_SELF_PATH = "/api/auth/me"
 SELF_PATH = "/api/user/self"
 STATUS_PATH = "/api/status"
 TOKEN_GROUPS_PATH = "/api/user/self/groups"
@@ -277,8 +279,8 @@ def validate_account_fields(
     if not base_url.startswith(("http://", "https://")):
         raise ValueError("base_url must start with http:// or https://")
 
-    if provider not in ("new-api", "sub2api"):
-        raise ValueError("provider must be new-api or sub2api")
+    if provider not in ("new-api", "sub2api", "custom"):
+        raise ValueError("provider must be new-api, sub2api or custom")
 
     if provider == "new-api" and new_api_user and not new_api_user.isdigit():
         raise ValueError("new_api_user must be numeric")
@@ -287,7 +289,7 @@ def validate_account_fields(
         raise ValueError("session is required")
     if any(ch.isspace() for ch in session_value):
         raise ValueError("session must not contain whitespace")
-    min_session_len = 20 if provider == "new-api" else 30
+    min_session_len = 20 if provider in ("new-api", "custom") else 30
     if len(session_value) < min_session_len:
         raise ValueError("session looks too short")
 
@@ -311,7 +313,7 @@ def normalize_account(account: dict[str, Any], fallback_base_url: str | None = N
     normalized["name"] = str(normalized.get("name") or "").strip()
     normalized["enabled"] = bool(normalized.get("enabled", True))
     provider = str(normalized.get("provider") or "new-api").strip().lower()
-    if provider not in ("new-api", "sub2api"):
+    if provider not in ("new-api", "sub2api", "custom"):
         provider = "new-api"
     normalized["provider"] = provider
     normalized["new_api_user"] = str(normalized.get("new_api_user") or "").strip()
@@ -525,6 +527,8 @@ def set_signin_status_today(account_name: str, status: str) -> None:
 
 def set_base_url_signin_status_today(accounts: list[dict[str, Any]], base_url: str, status: str) -> None:
     normalized_url = normalize_base_url(base_url)
+    if is_site_with_dedicated_checkin(normalized_url) and status == "不可签到":
+        return
     for account in accounts:
         account_url = normalize_base_url(str(account.get("base_url") or get_base_url()))
         if account_url != normalized_url:
@@ -532,6 +536,29 @@ def set_base_url_signin_status_today(accounts: list[dict[str, Any]], base_url: s
         account_index = int(account.get("account_index", 0) or 0)
         runtime_key = str(account_index) if account_index > 0 else str(account.get("name") or "")
         set_signin_status_today(runtime_key, status)
+
+
+def clear_signin_status_today(account_name: str) -> None:
+    if not account_name:
+        return
+    with config_lock:
+        store = load_signin_store(normalize_and_persist=False)
+        accounts = store.get("accounts", {})
+        if isinstance(accounts, dict) and account_name in accounts:
+            del accounts[account_name]
+            store["accounts"] = accounts
+            atomic_save_json(SIGNIN_PATH, store)
+
+
+def clear_dedicated_unsupported_signin_status(accounts: list[dict[str, Any]]) -> None:
+    for account in accounts:
+        account_url = normalize_base_url(str(account.get("base_url") or get_base_url()))
+        if not is_site_with_dedicated_checkin(account_url):
+            continue
+        account_index = int(account.get("account_index", 0) or 0)
+        runtime_key = str(account_index) if account_index > 0 else str(account.get("name") or "")
+        if get_signin_status_today(runtime_key) == "不可签到":
+            clear_signin_status_today(runtime_key)
 
 
 def get_signin_status_today(account_name: str) -> str:
@@ -699,12 +726,13 @@ def get_account_by_index(account_index: int) -> dict[str, Any] | None:
 
 def account_provider(account: dict[str, Any]) -> str:
     provider = str(account.get("provider") or "new-api").strip().lower()
-    return provider if provider in ("new-api", "sub2api") else "new-api"
+    return provider if provider in ("new-api", "sub2api", "custom") else "new-api"
 
 
 def token_cache_key(account: dict[str, Any]) -> str:
     base_url = normalize_base_url(str(account.get("base_url") or get_base_url()))
-    provider = account_provider(account)
+    custom_auth_site = is_custom_auth_cookie_site(base_url)
+    provider = "custom" if custom_auth_site else account_provider(account)
     user_id = str(account.get("new_api_user") or "").strip()
     session_hint = str(account.get("session") or "").strip()[:12] if provider == "sub2api" else user_id
     return f"{provider}|{base_url}|{session_hint}"
@@ -1411,6 +1439,113 @@ def is_e2ez_site(base_url: str) -> bool:
     return parsed.hostname == "api.e2ez.com"
 
 
+def is_custom_auth_cookie_site(base_url: str) -> bool:
+    parsed = urlparse(normalize_base_url(base_url))
+    return parsed.hostname == "free.supxh.xin"
+
+
+def is_site_with_dedicated_checkin(base_url: str) -> bool:
+    return is_e2ez_site(base_url) or is_custom_auth_cookie_site(base_url)
+
+
+def build_custom_cookie_auth(account: dict[str, Any]) -> tuple[dict[str, str], dict[str, str]]:
+    base_url = normalize_base_url(str(account.get("base_url") or get_base_url()))
+    cookies = parse_cookie_header(str(account.get("cookie") or ""))
+    session_value = str(account.get("session") or "").strip()
+    if session_value and "auth_token" not in cookies:
+        cookies["auth_token"] = session_value
+    headers = dict(DEFAULT_HEADERS)
+    headers.update({
+        "accept": "*/*",
+        "content-type": "application/json",
+        "origin": base_url,
+        "referer": f"{base_url}/dashboard",
+        "dnt": "1",
+        "pragma": "no-cache",
+        "cache-control": "no-store",
+    })
+    return cookies, headers
+
+
+def normalize_custom_user_data(payload: dict[str, Any]) -> dict[str, Any]:
+    data = payload.get("data") if isinstance(payload.get("data"), dict) else payload
+    return data if isinstance(data, dict) else {}
+
+
+def extract_custom_quota(data: dict[str, Any]) -> int | float | None:
+    for key in ("quota", "balance", "credits", "credit", "amount", "remaining", "points"):
+        value = data.get(key) if isinstance(data, dict) else None
+        if isinstance(value, (int, float)):
+            return value
+        if isinstance(value, str):
+            try:
+                return float(value)
+            except ValueError:
+                pass
+    return None
+
+
+def custom_signin_result_from_payload(payload: dict[str, Any]) -> tuple[str, str]:
+    text = payload_text(payload)
+    message = str(payload.get("message") or payload.get("msg") or "").strip() if isinstance(payload, dict) else ""
+    lowered = text.lower()
+    if any(keyword in lowered for keyword in ("already", "已签到", "今日已签", "重复签到")):
+        return "ALREADY_SIGNED", message or "今日已签到"
+    if any(keyword in lowered for keyword in ("success", "签到成功", "sign in successful", "signin successful")):
+        return "SIGNED_NOW", message or "签到成功"
+    if isinstance(payload, dict) and (payload.get("success") is True or payload.get("code") in (0, "0")):
+        return "SIGNED_NOW", message or "签到成功"
+    return "SIGNED_NOW", message or "签到成功"
+
+
+def classify_custom_cookie_checkin(account: dict[str, Any], base_url: str) -> dict[str, Any]:
+    name = account.get("name") or "unknown"
+    account_index = int(account.get("account_index", 0) or 0)
+    cookies, headers = build_custom_cookie_auth(account)
+    if "auth_token" not in cookies:
+        return {"account": name, "account_index": account_index, "state": "FAILED", "message": "missing auth_token cookie", "timestamp": now_ts()}
+    try:
+        resp = requests.post(base_url + CUSTOM_SIGNIN_PATH, headers=headers, cookies=cookies, timeout=TIMEOUT_SECONDS)
+    except requests.RequestException as exc:
+        return {"account": name, "account_index": account_index, "state": "FAILED", "message": f"network error: {exc}", "timestamp": now_ts()}
+    payload = parse_api_payload(resp)
+    error = api_payload_error(payload, resp)
+    if error:
+        state, message = "FAILED", error
+    else:
+        state, message = custom_signin_result_from_payload(payload)
+    return {"account": name, "account_index": account_index, "state": state, "message": message, "http_status": resp.status_code, "payload": payload, "timestamp": now_ts()}
+
+
+def request_custom_cookie_self_with_retry(account: dict[str, Any]) -> tuple[requests.Response | None, dict[str, Any], str | None]:
+    base_url = normalize_base_url(str(account.get("base_url") or get_base_url()))
+    cookies, headers = build_custom_cookie_auth(account)
+    url = base_url.rstrip("/") + "/" + CUSTOM_SELF_PATH.lstrip("/")
+    attempts = 3
+    last_error = None
+    for idx in range(1, attempts + 1):
+        try:
+            resp = requests.get(url, cookies=cookies, headers=headers, timeout=TIMEOUT_SECONDS)
+            return resp, parse_api_payload(resp), None
+        except requests.RequestException as exc:
+            last_error = f"network error: {exc}"
+            if idx < attempts:
+                time.sleep(0.5 * idx)
+    return None, {}, last_error or "network error"
+
+
+def request_custom_self_for_auth(base_url: str, auth_token: str, cookie_header: str) -> tuple[dict[str, Any], dict[str, Any] | None, str | None]:
+    account = {"provider": "custom", "base_url": base_url, "session": auth_token, "cookie": cookie_header}
+    resp, payload, network_error = request_custom_cookie_self_with_retry(account)
+    if network_error:
+        return {}, None, network_error
+    if resp is None:
+        return payload, None, "network error"
+    if not resp.ok or payload.get("success") is False or ("code" in payload and str(payload.get("code")) != "0"):
+        return payload, None, api_payload_error(payload, resp)
+    return payload, normalize_custom_user_data(payload), None
+
+
 def build_e2ez_checkin_cookies(account: dict[str, Any]) -> dict[str, str]:
     cookies = parse_cookie_header(str(account.get("cookie") or ""))
     session_value = str(account.get("session") or "").strip()
@@ -1505,6 +1640,8 @@ def classify_checkin(account: dict[str, Any]) -> dict[str, Any]:
 
     if is_e2ez_site(base_url):
         return classify_e2ez_checkin(account, base_url)
+    if is_custom_auth_cookie_site(base_url) or provider == "custom":
+        return classify_custom_cookie_checkin(account, base_url)
 
     if provider == "sub2api":
         return {
@@ -1599,7 +1736,8 @@ def check_status(account: dict[str, Any], system_status: dict[str, Any] | None =
     session_value = (account.get("session") or "").strip()
     user_id = (account.get("new_api_user") or "").strip()
     base_url = normalize_base_url(str(account.get("base_url") or get_base_url()))
-    provider = account_provider(account)
+    custom_auth_site = is_custom_auth_cookie_site(base_url)
+    provider = "custom" if custom_auth_site else account_provider(account)
 
     if not session_value:
         return {
@@ -1624,6 +1762,8 @@ def check_status(account: dict[str, Any], system_status: dict[str, Any] | None =
         }
     if provider == "sub2api":
         resp, payload, network_error = request_sub2api_self_with_retry(account)
+    elif provider == "custom" or is_custom_auth_cookie_site(base_url):
+        resp, payload, network_error = request_custom_cookie_self_with_retry(account)
     else:
         resp, payload, network_error = request_self_with_retry(session_value, user_id, base_url=base_url)
     if network_error:
@@ -1678,10 +1818,18 @@ def check_status(account: dict[str, Any], system_status: dict[str, Any] | None =
             "timestamp": now_ts(),
         }
 
-    payload_ok = isinstance(payload, dict) and (payload.get("success") is True or payload.get("code") == 0)
-    if payload_ok and isinstance(payload.get("data"), dict):
-        data = payload.get("data") if isinstance(payload.get("data"), dict) else {}
-        quota = data.get("quota")
+    payload_ok = isinstance(payload, dict) and (
+        payload.get("success") is True
+        or payload.get("code") == 0
+        or (provider == "custom" and resp.ok)
+    )
+    if payload_ok and isinstance(payload, dict):
+        data = payload.get("data") if isinstance(payload.get("data"), dict) else payload if provider == "custom" else {}
+        quota = data.get("quota") if isinstance(data, dict) else None
+        if provider == "custom" and not isinstance(quota, (int, float)):
+            custom_quota = extract_custom_quota(data if isinstance(data, dict) else {})
+            if isinstance(custom_quota, (int, float)):
+                quota = custom_quota
         if provider == "sub2api" and not isinstance(quota, (int, float)):
             balance = data.get("balance")
             if isinstance(balance, (int, float)):
@@ -1694,6 +1842,16 @@ def check_status(account: dict[str, Any], system_status: dict[str, Any] | None =
                 "quota_per_unit": 1,
                 "quota_display_type": "USD",
                 "checkin_enabled": False,
+            }
+        if provider == "custom":
+            base_system_status = system_status if isinstance(system_status, dict) else {}
+            system_status = {
+                **base_system_status,
+                "ok": True,
+                "quota_per_unit": 1,
+                "quota_display_type": "RAW",
+                "custom_currency_symbol": "",
+                "checkin_enabled": True,
             }
         quota_delta = None
         quota_source = "live"
@@ -1739,9 +1897,9 @@ def check_status(account: dict[str, Any], system_status: dict[str, Any] | None =
             "system_status": system_status,
             "timestamp": now_ts(),
             "identity": {
-                "id": data.get("id"),
-                "username": data.get("username"),
-                "display_name": data.get("display_name") or data.get("username"),
+                "id": data.get("id") or data.get("userId") or data.get("user_id"),
+                "username": data.get("username") or data.get("name"),
+                "display_name": data.get("display_name") or data.get("username") or data.get("name") or data.get("email"),
                 "email": data.get("email"),
                 "status": data.get("status"),
                 "group": data.get("group"),
@@ -1829,12 +1987,15 @@ def get_next_account_index(accounts: list[dict[str, Any]]) -> int:
 
 def to_public_account(account: dict[str, Any], signin_status: str = "未签到", last_status: dict[str, Any] | None = None) -> dict[str, Any]:
     api_keys = parse_api_keys(account.get("api_keys"))
+    account_base_url = normalize_base_url(str(account.get("base_url") or get_base_url()))
+    if is_site_with_dedicated_checkin(account_base_url) and signin_status == "不可签到":
+        signin_status = "未签到"
     public_signin_status = signin_status if signin_status in ("已签到", "不可签到") else "未签到"
     return {
         "account_index": int(account.get("account_index", 0) or 0),
         "name": account.get("name", ""),
         "enabled": bool(account.get("enabled", True)),
-        "base_url": normalize_base_url(str(account.get("base_url") or get_base_url())),
+        "base_url": account_base_url,
         "provider": account_provider(account),
         "new_api_user": str(account.get("new_api_user", "")),
         "session": str(account.get("session", "")),
@@ -1851,7 +2012,7 @@ def parse_account_payload(data: dict[str, Any], require_name: bool = True) -> di
     raw_base_url = str(data.get("base_url") or "").strip()
     base_url = normalize_base_url(raw_base_url)
     provider = str(data.get("provider") or "new-api").strip().lower()
-    if provider not in ("new-api", "sub2api"):
+    if provider not in ("new-api", "sub2api", "custom"):
         provider = "new-api"
     new_api_user = str(data.get("new_api_user") or "").strip()
     session_value = str(data.get("session") or "").strip()
@@ -2399,8 +2560,30 @@ def build_auth_account_from_import_json(import_json: Any, fallback_base_url: str
     storage = json_import_storage_items(import_json if isinstance(import_json, dict) else {})
     notes: list[str] = []
     token = find_auth_token_from_storage(storage)
+    auth_token_cookie = cookie_value(cookies, "auth_token")
     session_value = cookie_value(cookies, "session")
     identity = find_identity_from_storage(storage) or {}
+
+    if auth_token_cookie:
+        if contains_redacted_value(auth_token_cookie):
+            raise ValueError("JSON 中的 auth_token Cookie 已被 [REDACTED] 脱敏，不能使用；请粘贴未脱敏的完整 JSON。")
+        payload, remote_identity, error = request_custom_self_for_auth(base_url, auth_token_cookie, extract_cookie_header(cookies))
+        if error:
+            remote_identity = None
+        identity = remote_identity or identity or {}
+        display = preferred_account_name(identity) or str(identity.get("username") or "").strip() or "custom-account"
+        account = {
+            "provider": "custom",
+            "base_url": base_url,
+            "name": display,
+            "new_api_user": str(identity.get("id") or identity.get("userId") or identity.get("user_id") or ""),
+            "session": auth_token_cookie,
+            "cookie": extract_cookie_header(cookies),
+            "identity": identity,
+            "payload": payload,
+            "notes": ["从粘贴 JSON 导入：auth_token Cookie 作为自定义网站登录凭据"],
+        }
+        return account, account["notes"]
 
     if token:
         if contains_redacted_value(token):
@@ -2447,6 +2630,7 @@ def index() -> str:
 @app.route("/api/accounts", methods=["GET"])
 def list_accounts():
     cfg = load_config()
+    clear_dedicated_unsupported_signin_status(cfg.get("accounts", []))
     accounts = build_public_accounts(cfg.get("accounts", []))
     return jsonify({
         "ok": True,
@@ -2587,10 +2771,11 @@ def checkin_one(account_index: int):
     result = classify_checkin(accounts[idx])
     result["account_index"] = account_index
     runtime_key = str(account_index)
+    account_base_url = normalize_base_url(str(accounts[idx].get("base_url") or get_base_url()))
     if result.get("state") in ("SIGNED_NOW", "ALREADY_SIGNED"):
         set_signin_status_today(runtime_key, "已签到")
-    elif result.get("state") == "UNSUPPORTED":
-        set_base_url_signin_status_today(accounts, str(accounts[idx].get("base_url") or get_base_url()), "不可签到")
+    elif result.get("state") == "UNSUPPORTED" and not is_site_with_dedicated_checkin(account_base_url):
+        set_base_url_signin_status_today(accounts, account_base_url, "不可签到")
     elif result.get("state") == "FAILED":
         set_signin_status_today(runtime_key, "未签到")
     return jsonify({"ok": True, "result": result})
@@ -2607,7 +2792,7 @@ def checkin_all():
         account_index = int(account.get("account_index", 0) or 0)
         runtime_key = str(account_index) if account_index > 0 else str(account.get("name") or "")
         account_base_url = normalize_base_url(str(account.get("base_url") or get_base_url()))
-        if is_e2ez_site(account_base_url):
+        if is_site_with_dedicated_checkin(account_base_url):
             continue
         if get_signin_status_today(runtime_key) == "不可签到" or cached_checkin_disabled(account_index):
             unsupported_base_urls.add(account_base_url)
@@ -2622,7 +2807,9 @@ def checkin_all():
         runtime_key = str(account_index) if account_index > 0 else str(account.get("name") or "")
         account_base_url = normalize_base_url(str(account.get("base_url") or get_base_url()))
         signin_status = get_signin_status_today(runtime_key)
-        if not is_e2ez_site(account_base_url) and (account_base_url in unsupported_base_urls or signin_status == "不可签到"):
+        if is_site_with_dedicated_checkin(account_base_url) and signin_status == "不可签到":
+            signin_status = "未签到"
+        if not is_site_with_dedicated_checkin(account_base_url) and (account_base_url in unsupported_base_urls or signin_status == "不可签到"):
             skipped_unsupported += 1
             continue
         if signin_status != "未签到":
@@ -2636,9 +2823,10 @@ def checkin_all():
         runtime_key = str(account_index) if account_index > 0 else account_name
         result = classify_checkin(acc)
         result["account_index"] = account_index
+        account_base_url = normalize_base_url(str(acc.get("base_url") or get_base_url()))
         if result.get("state") in ("SIGNED_NOW", "ALREADY_SIGNED"):
             set_signin_status_today(runtime_key, "已签到")
-        elif result.get("state") == "UNSUPPORTED":
+        elif result.get("state") == "UNSUPPORTED" and not is_site_with_dedicated_checkin(account_base_url):
             set_signin_status_today(runtime_key, "不可签到")
         elif result.get("state") == "FAILED":
             set_signin_status_today(runtime_key, "未签到")
@@ -2649,7 +2837,7 @@ def checkin_all():
         normalize_base_url(str(account.get("base_url") or get_base_url()))
         for account, result in zip(checkin_accounts, results)
         if result.get("state") == "UNSUPPORTED"
-        and not is_e2ez_site(normalize_base_url(str(account.get("base_url") or get_base_url())))
+        and not is_site_with_dedicated_checkin(normalize_base_url(str(account.get("base_url") or get_base_url())))
     }
     for base_url in unsupported_urls:
         set_base_url_signin_status_today(all_accounts, base_url, "不可签到")
@@ -2675,9 +2863,12 @@ def status_one(account_index: int):
     system_status = fetch_public_status(base_url=account_base_url)
     result = check_status(accounts[idx], system_status=system_status)
     result["account_index"] = account_index
-    if system_status.get("checkin_enabled") is False:
+    if system_status.get("checkin_enabled") is False and not is_site_with_dedicated_checkin(account_base_url):
         set_base_url_signin_status_today(accounts, account_base_url, "不可签到")
-    result["signin_status"] = get_signin_status_today(str(account_index))
+    signin_status = get_signin_status_today(str(account_index))
+    if is_site_with_dedicated_checkin(account_base_url) and signin_status == "不可签到":
+        signin_status = "未签到"
+    result["signin_status"] = signin_status
     set_status_cache(str(account_index), result)
     return jsonify({"ok": True, "result": result, "system_status": system_status})
 
@@ -2702,19 +2893,27 @@ def status_all():
         result = check_status(acc, system_status=system_status)
         account_index = int(acc.get("account_index", 0) or 0)
         runtime_key = str(account_index) if account_index > 0 else str(acc.get("name") or "")
+        signin_status = get_signin_status_today(runtime_key)
+        if is_site_with_dedicated_checkin(account_base_url) and signin_status == "不可签到":
+            signin_status = "未签到"
         result["account_index"] = account_index
-        result["signin_status"] = get_signin_status_today(runtime_key)
+        result["signin_status"] = signin_status
         set_status_cache(runtime_key, result)
         return result
 
     results = run_batch_parallel(accounts, check_account_status)
     for base_url, system_status in system_status_cache.items():
-        if system_status.get("checkin_enabled") is False and not is_e2ez_site(base_url):
+        if system_status.get("checkin_enabled") is False and not is_site_with_dedicated_checkin(base_url):
             set_base_url_signin_status_today(all_accounts, base_url, "不可签到")
     for result in results:
         runtime_key = str(result.get("account_index") or "")
         if runtime_key:
-            result["signin_status"] = get_signin_status_today(runtime_key)
+            signin_status = get_signin_status_today(runtime_key)
+            account = get_account_by_index(int(runtime_key))
+            account_base_url = normalize_base_url(str(account.get("base_url") or get_base_url())) if account else ""
+            if account_base_url and is_site_with_dedicated_checkin(account_base_url) and signin_status == "不可签到":
+                signin_status = "未签到"
+            result["signin_status"] = signin_status
     default_base_url = normalize_base_url(str(get_base_url()))
     return jsonify({"ok": True, "results": results, "system_status": system_status_cache.get(default_base_url) or fetch_public_status(base_url=default_base_url)})
 
