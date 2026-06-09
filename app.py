@@ -2083,9 +2083,8 @@ def find_import_update_account(
     imported_account: dict[str, Any],
 ) -> tuple[int, dict[str, Any]] | tuple[int, None]:
     wanted_url = normalize_base_url(str(imported_account.get("base_url") or ""))
-    wanted_identity = account_import_identity(imported_account)
     wanted_name = str(imported_account.get("name") or "").strip().lower()
-    if not wanted_url or not (wanted_identity or wanted_name):
+    if not wanted_url or not wanted_name:
         return -1, None
 
     for idx, account in enumerate(accounts):
@@ -2094,11 +2093,8 @@ def find_import_update_account(
         account_url = normalize_base_url(str(account.get("base_url") or get_base_url()))
         if account_url != wanted_url:
             continue
-        account_identity = account_import_identity(account)
         account_name = str(account.get("name") or "").strip().lower()
-        if wanted_identity and account_identity and account_identity == wanted_identity:
-            return idx, account
-        if wanted_name and account_name and account_name == wanted_name:
+        if account_name and account_name == wanted_name:
             return idx, account
     return -1, None
 
@@ -3198,7 +3194,7 @@ def auth_import_json():
                 "updated": True,
                 "account": to_public_account(updated, signin_status=get_signin_status_today(str(updated.get("account_index") or "")), last_status=get_status_cache(str(updated.get("account_index") or ""))),
                 "accounts": build_public_accounts(cfg["accounts"]),
-                "notes": list(notes) + ["已发现相同账号标识，已更新现有账号信息"],
+                "notes": list(notes) + ["已发现相同网站地址和账户名，已更新现有账号信息"],
             })
         ensure_unique_account(accounts, account)
         return jsonify({"ok": True, "updated": False, "account": account, "notes": notes})
