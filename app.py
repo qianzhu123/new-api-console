@@ -1420,8 +1420,10 @@ def build_yesterday_delta(account_name: str, current_quota: int | float | None) 
     }
 
 
-def cached_checkin_disabled(account_index: int) -> bool:
+def cached_checkin_disabled(account_index: int, base_url: str = "") -> bool:
     if account_index <= 0:
+        return False
+    if base_url and is_site_with_dedicated_checkin(base_url):
         return False
     cached = get_status_cache(str(account_index))
     system_status = cached.get("system_status") if isinstance(cached, dict) else None
@@ -1985,11 +1987,32 @@ def get_next_account_index(accounts: list[dict[str, Any]]) -> int:
     return max_id + 1
 
 
+def normalize_dedicated_signin_status(base_url: str, signin_status: str) -> str:
+    if is_site_with_dedicated_checkin(normalize_base_url(base_url)) and signin_status == "不可签到":
+        return "未签到"
+    return signin_status
+
+
+def sanitize_dedicated_status_result(base_url: str, result: dict[str, Any] | None) -> dict[str, Any] | None:
+    if not isinstance(result, dict):
+        return result
+    if not is_site_with_dedicated_checkin(normalize_base_url(base_url)):
+        return result
+    if result.get("signin_status") == "不可签到":
+        result = dict(result)
+        result["signin_status"] = "未签到"
+    system_status = result.get("system_status")
+    if isinstance(system_status, dict) and system_status.get("checkin_enabled") is False:
+        result = dict(result)
+        result["system_status"] = {**system_status, "checkin_enabled": True}
+    return result
+
+
 def to_public_account(account: dict[str, Any], signin_status: str = "未签到", last_status: dict[str, Any] | None = None) -> dict[str, Any]:
     api_keys = parse_api_keys(account.get("api_keys"))
     account_base_url = normalize_base_url(str(account.get("base_url") or get_base_url()))
-    if is_site_with_dedicated_checkin(account_base_url) and signin_status == "不可签到":
-        signin_status = "未签到"
+    signin_status = normalize_dedicated_signin_status(account_base_url, signin_status)
+    last_status = sanitize_dedicated_status_result(account_base_url, last_status)
     public_signin_status = signin_status if signin_status in ("已签到", "不可签到") else "未签到"
     return {
         "account_index": int(account.get("account_index", 0) or 0),
@@ -2101,6 +2124,8 @@ def build_public_accounts(accounts: list[dict[str, Any]]) -> list[dict[str, Any]
         if item is None and name_counts.get(name) == 1:
             item = signin_map.get(name)
         status = item.get("status") if isinstance(item, dict) else "未签到"
+        account_base_url = normalize_base_url(str(acc.get("base_url") or get_base_url()))
+        status = normalize_dedicated_signin_status(account_base_url, status or "未签到")
         last_status = status_map.get(runtime_key) if isinstance(status_map.get(runtime_key), dict) else None
         if last_status is None and name_counts.get(name) == 1:
             last_status = status_map.get(name) if isinstance(status_map.get(name), dict) else None
@@ -2794,7 +2819,7 @@ def checkin_all():
         account_base_url = normalize_base_url(str(account.get("base_url") or get_base_url()))
         if is_site_with_dedicated_checkin(account_base_url):
             continue
-        if get_signin_status_today(runtime_key) == "不可签到" or cached_checkin_disabled(account_index):
+        if get_signin_status_today(runtime_key) == "不可签到" or cached_checkin_disabled(account_index, account_base_url):
             unsupported_base_urls.add(account_base_url)
     for base_url in unsupported_base_urls:
         set_base_url_signin_status_today(all_accounts, base_url, "不可签到")

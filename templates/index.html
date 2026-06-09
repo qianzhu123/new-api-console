@@ -1552,14 +1552,18 @@ function fillForm(acc = null) {
 }
 
 function renderRowSummary(key) {
+  const acc = findAccountByKey(key);
+  const dedicatedCheckin = acc && siteHasDedicatedCheckin(acc.base_url || state.defaultBaseUrl);
   if (state.pendingAccounts[key]) {
+    const pendingCheckinText = state.pendingAccounts[key] === 'checkin' ? '处理中...' : (state.signinStatus[key] || '未签到');
     return {
-      checkinText: state.pendingAccounts[key] === 'checkin' ? '处理中...' : (state.signinStatus[key] || '未签到'),
+      checkinText: dedicatedCheckin && pendingCheckinText === '不可签到' ? '未签到' : pendingCheckinText,
       statusText: state.pendingAccounts[key] === 'status' ? '处理中...' : '-',
     };
   }
   const s = state.statusResults[key];
-  const checkinText = state.signinStatus[key] || '未签到';
+  let checkinText = state.signinStatus[key] || '未签到';
+  if (dedicatedCheckin && checkinText === '不可签到') checkinText = '未签到';
   let statusText = '-';
   if (s) {
     statusText = (s.status_state === 'VALID' || s.session_valid) ? '有效' : '异常';
@@ -2499,7 +2503,9 @@ function renderDetail() {
   const acc = state.selected;
   const key = accountKey(acc);
   const sr = state.statusResults[key];
-  const signState = state.signinStatus[key] || '未签到';
+  const signState = siteHasDedicatedCheckin(acc.base_url || state.defaultBaseUrl) && (state.signinStatus[key] || '未签到') === '不可签到'
+    ? '未签到'
+    : (state.signinStatus[key] || '未签到');
   const identity = sr?.identity || {};
   const sys = sr?.system_status || state.systemStatus;
   const q = sr?.quota || {};
@@ -2597,7 +2603,8 @@ async function refreshAccounts() {
   state.statusResults = {};
   for (const acc of state.accounts) {
     const key = accountKey(acc);
-    state.signinStatus[key] = acc.signin_status || '未签到';
+    const signinStatus = acc.signin_status || '未签到';
+    state.signinStatus[key] = siteHasDedicatedCheckin(acc.base_url || state.defaultBaseUrl) && signinStatus === '不可签到' ? '未签到' : signinStatus;
     if (acc.last_status && typeof acc.last_status === 'object') state.statusResults[key] = acc.last_status;
   }
   if (state.selected) state.selected = findAccountByKey(accountKey(state.selected));
