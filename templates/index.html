@@ -1936,12 +1936,42 @@ function tokenDisplayKey(key, token) {
 function renderTokenPanel(acc) {
   const panel = document.getElementById('token-panel');
   if (!panel || !acc) return;
-  if (normalizeProvider(acc.provider) === 'custom') {
-    panel.innerHTML = '<div class="token-empty">自定义网站令牌有且只有一个，不支持在此创建、删除或修改令牌。</div>';
-    return;
-  }
   const key = accountKey(acc);
   const tokens = state.tokens[key] || [];
+  if (normalizeProvider(acc.provider) === 'custom') {
+    const busy = tokenBusyText(key);
+    const token = tokens[0] || null;
+    const tokenKey = token ? formatTokenKey(token.key) : '';
+    panel.innerHTML = `
+      <div class="token-head">
+        <div class="token-title">默认令牌</div>
+        <div class="token-actions">
+          <button type="button" class="secondary" id="btn-token-refresh">${busy || '刷新令牌'}</button>
+        </div>
+      </div>
+      <div class="token-section-label">接口返回的唯一令牌</div>
+      <div class="token-list">
+        ${tokenKey ? `
+          <div class="token-row">
+            <div class="token-meta">
+              <div class="token-name">${escapeHtml(token.name || '默认令牌')}</div>
+              <div class="token-key mono">${escapeHtml(tokenKey)}</div>
+              <div class="token-group">自定义网站令牌只读，不支持新增、删除或修改。</div>
+            </div>
+            <div class="token-row-actions">
+              <button type="button" class="secondary" data-token-copy="${escapeHtml(tokenKey)}">复制</button>
+            </div>
+          </div>
+        ` : `<div class="token-empty">${busy || '未从信息接口返回 apiKey，请刷新令牌或检查 Cookie。'}</div>`}
+      </div>
+    `;
+    const refreshBtn = panel.querySelector('#btn-token-refresh');
+    if (refreshBtn) refreshBtn.addEventListener('click', () => loadTokenData(key, true, { reveal: false }).catch(handleTokenError(key)));
+    for (const btn of panel.querySelectorAll('[data-token-copy]')) {
+      btn.addEventListener('click', () => copyText(btn.dataset.tokenCopy || '', '令牌已复制').catch(handleTokenError(key)));
+    }
+    return;
+  }
   const busy = tokenBusyText(key);
   const tokenBusy = !!state.tokenLoading[key];
   const tokenHtml = tokens.length ? tokens.map((token) => `
@@ -2574,13 +2604,17 @@ function renderDetail() {
   renderTokenPanel(acc);
 }
 
+function isCustomAccount(acc) {
+  return !!acc && (normalizeProvider(acc.provider) === 'custom' || isCustomAuthCookieSite(acc.base_url || state.defaultBaseUrl));
+}
+
 function selectAccount(key) {
   state.selectedSite = null;
   state.selected = findAccountByKey(key);
   if (state.selected) fillForm(state.selected);
   renderTable();
   renderDetail();
-  if (state.selected) loadTokenData(key).catch((e) => {
+  if (state.selected) loadTokenData(key, isCustomAccount(state.selected), { reveal: !isCustomAccount(state.selected) }).catch((e) => {
     log(`${accountLabel(key)} 令牌加载失败：${e.message || e}`, 'bad2');
     notify('bad2', '令牌加载失败', `${accountLabel(key)}：${e.message || e}`);
   });

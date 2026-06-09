@@ -1173,6 +1173,9 @@ def token_group_error(message: str) -> bool:
 
 
 def fetch_remote_token_groups(account: dict[str, Any]) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    base_url = normalize_base_url(str(account.get("base_url") or get_base_url()))
+    if account_provider(account) == "custom" or is_custom_auth_cookie_site(base_url):
+        return [], {"custom": True, "readonly": True}
     base_url, session_value, headers, cookies = build_token_headers(account)
     if not session_value:
         raise ValueError("missing session")
@@ -1189,6 +1192,9 @@ def fetch_remote_token_groups(account: dict[str, Any]) -> tuple[list[dict[str, A
 
 
 def fetch_remote_tokens(account: dict[str, Any]) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    base_url = normalize_base_url(str(account.get("base_url") or get_base_url()))
+    if account_provider(account) == "custom" or is_custom_auth_cookie_site(base_url):
+        return fetch_custom_cookie_tokens(account)
     base_url, session_value, headers, cookies = build_token_headers(account)
     if not session_value:
         raise ValueError("missing session")
@@ -1471,6 +1477,35 @@ def build_custom_cookie_auth(account: dict[str, Any]) -> tuple[dict[str, str], d
 def normalize_custom_user_data(payload: dict[str, Any]) -> dict[str, Any]:
     data = payload.get("data") if isinstance(payload.get("data"), dict) else payload
     return data if isinstance(data, dict) else {}
+
+
+def custom_api_key_tokens_from_user_data(data: dict[str, Any]) -> list[dict[str, Any]]:
+    api_key = str(data.get("apiKey") or data.get("api_key") or "").strip()
+    if not api_key:
+        return []
+    username = str(data.get("username") or data.get("name") or data.get("id") or "默认令牌").strip()
+    return [{
+        "id": "default",
+        "name": username or "默认令牌",
+        "key": format_token_key(api_key),
+        "group": "自定义网站",
+        "readonly": True,
+        "source": "api_auth_me",
+    }]
+
+
+def fetch_custom_cookie_tokens(account: dict[str, Any]) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    resp, payload, network_error = request_custom_cookie_self_with_retry(account)
+    if network_error:
+        raise RuntimeError(network_error)
+    if resp is None:
+        raise RuntimeError("network error")
+    error = api_payload_error(payload, resp)
+    if error:
+        raise RuntimeError(error)
+    tokens = custom_api_key_tokens_from_user_data(normalize_custom_user_data(payload))
+    update_token_cache(account, tokens=tokens)
+    return tokens, payload
 
 
 def extract_custom_quota(data: dict[str, Any]) -> int | float | None:
@@ -2897,6 +2932,13 @@ def list_tokens(account_index: int):
     if account is None:
         return jsonify({"ok": False, "error": "account not found"}), 404
     force = is_truthy_query_arg("force")
+    base_url = normalize_base_url(str(account.get("base_url") or get_base_url()))
+    if account_provider(account) == "custom" or is_custom_auth_cookie_site(base_url):
+        try:
+            tokens, payload = fetch_custom_cookie_tokens(account)
+        except RuntimeError as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 502
+        return jsonify({"ok": True, "tokens": tokens, "source": "remote", "payload": payload})
     cached = cached_tokens(account)
     if has_cached_tokens(account) and not force:
         return jsonify({"ok": True, "tokens": cached, "source": "cache"})
@@ -2916,6 +2958,8 @@ def create_token(account_index: int):
     account = get_account_by_index(account_index)
     if account is None:
         return jsonify({"ok": False, "error": "account not found"}), 404
+    if account_provider(account) == "custom" or is_custom_auth_cookie_site(str(account.get("base_url") or get_base_url())):
+        return jsonify({"ok": False, "error": "custom site token is read-only"}), 400
     payload = request.get_json(force=True)
     token_name = str(payload.get("name") or "").strip() if isinstance(payload, dict) else ""
     token_group = str(payload.get("group") or "").strip() if isinstance(payload, dict) else ""
@@ -2979,6 +3023,8 @@ def delete_token(account_index: int, token_id: int):
     account = get_account_by_index(account_index)
     if account is None:
         return jsonify({"ok": False, "error": "account not found"}), 404
+    if account_provider(account) == "custom" or is_custom_auth_cookie_site(str(account.get("base_url") or get_base_url())):
+        return jsonify({"ok": False, "error": "custom site token is read-only"}), 400
     base_url, session_value, headers, cookies = build_token_headers(account)
     if not session_value:
         return jsonify({"ok": False, "error": "missing session"}), 400
