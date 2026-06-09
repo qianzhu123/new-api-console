@@ -2503,7 +2503,7 @@ def account_from_qiandao_import_field(import_json: Any, base_url: str) -> dict[s
         return None
 
     provider = str(raw.get("provider") or "").strip().lower()
-    if provider not in ("new-api", "sub2api"):
+    if provider not in ("new-api", "sub2api", "custom"):
         return None
     session_value = str(raw.get("session") or raw.get("access_token") or "").strip()
     if not session_value:
@@ -2599,7 +2599,7 @@ def build_auth_account_from_import_json(import_json: Any, fallback_base_url: str
         account["notes"] = ["从粘贴 JSON 导入：Cookie session 作为 new-api session"]
         return account, notes
 
-    if identity and str(identity.get("id") or "").strip():
+    if identity and str(identity.get("id") or "").strip() and not is_custom_auth_cookie_site(base_url):
         user_id = str(identity.get("id") or "").strip()
         display = preferred_account_name(identity, user_id)
         account = {

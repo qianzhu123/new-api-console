@@ -95,8 +95,8 @@
     .small { color: var(--sub); font-size: 12px; }
     .row-actions { display: flex; gap: 6px; flex-wrap: nowrap; align-items: center; width: 100%; }
     .row-actions button { padding: 5px 6px; font-size: 12px; min-width: 40px; }
-    .account-table th:nth-child(8),
-    .account-table td:nth-child(8) { width: var(--action-col); }
+    .account-table th:nth-child(7),
+    .account-table td:nth-child(7) { width: var(--action-col); }
     .row-actions { justify-content: flex-start; }
     .row-actions button { flex: 0 0 auto; }
     .tag { display: inline-block; border-radius: 999px; padding: 2px 8px; font-size: 12px; font-weight: 600; }
@@ -153,16 +153,6 @@
     .sort-tools { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
     .sort-tools select { width: 150px; height: 34px; padding: 6px 8px; }
     .sort-tools button { padding: 7px 10px; }
-    .drag-handle {
-      cursor: grab;
-      user-select: none;
-      font-size: 16px;
-      line-height: 1;
-      color: #8a6d3b;
-      text-align: center;
-      width: 20px;
-    }
-    tr.dragging .drag-handle { cursor: grabbing; }
     .form-group { margin-bottom: 9px; }
     label { display: block; margin-bottom: 5px; color: var(--sub); font-size: 12px; font-weight: 600; }
     input, textarea, select {
@@ -884,7 +874,7 @@
           <div class="sort-tools" aria-label="账号排序">
             <select id="sort-field" title="排序字段">
               <option value="manual">手动排序</option>
-              <option value="new_api_user">new_api_user</option>
+              <option value="new_api_user">用户标识</option>
               <option value="quota">额度</option>
             </select>
             <button id="btn-sort-dir" class="secondary" type="button" title="切换升降序">降序</button>
@@ -894,18 +884,16 @@
         <div class="account-table-wrap">
           <table class="account-table">
             <colgroup>
-              <col style="width:4%;">
-              <col style="width:6%;">
-              <col style="width:17%;">
-              <col style="width:9%;">
-              <col style="width:13%;">
-              <col style="width:13%;">
+              <col style="width:7%;">
+              <col style="width:22%;">
               <col style="width:10%;">
-              <col style="width:28%;">
+              <col style="width:15%;">
+              <col style="width:14%;">
+              <col style="width:10%;">
+              <col style="width:22%;">
             </colgroup>
             <thead>
               <tr>
-                <th aria-label="排序"></th>
                 <th>序号</th>
                 <th>账号名</th>
                 <th>状态</th>
@@ -950,7 +938,7 @@
               <div id="f-provider-list" class="combo-list" role="listbox" data-combo-label="接口类型"></div>
             </div>
             <div class="form-group">
-              <label for="f-user">new_api_user</label>
+              <label for="f-user">用户标识</label>
               <input id="f-user" />
             </div>
             <div class="form-group">
@@ -1017,7 +1005,7 @@
           <div id="m-provider-list" class="combo-list" role="listbox" data-combo-label="接口类型"></div>
         </div>
         <div class="form-group">
-          <label for="m-user">new_api_user</label>
+          <label for="m-user">用户标识</label>
           <input id="m-user" inputmode="numeric" />
         </div>
         <div class="form-group span-2">
@@ -1258,6 +1246,16 @@ function getAccountQuotaMoney(acc) {
   if (!sr || !(sr.status_state === 'VALID' || sr.session_valid)) return null;
   const money = quotaToMoney(sr?.quota?.quota, sr?.system_status || state.systemStatus);
   return Number.isFinite(money) ? money : null;
+}
+function providerDisplay(acc) {
+  const provider = normalizeProvider(acc?.provider || 'new-api');
+  if (provider === 'custom') return '自定义网站';
+  return provider;
+}
+function accountUserDisplay(acc) {
+  const value = quoteText(acc?.new_api_user).trim();
+  if (!value) return '';
+  return value;
 }
 function maskTag(enabled) { return enabled ? '<span class="tag ok">启用</span>' : '<span class="tag off">停用</span>'; }
 function setFieldInvalid(node, invalid) { if (node) node.classList.toggle('input-invalid', !!invalid); }
@@ -1759,7 +1757,7 @@ function renderGroupRow(group) {
   const tr = document.createElement('tr');
   tr.className = 'group-row';
   if (state.selectedSite === group.baseUrl) tr.classList.add('selected');
-  tr.title = '单击查看地址详情；按住地址行或拖动 ☰ 可移动地址分组；双击展开或折叠';
+  tr.title = '单击查看地址详情；按住地址行可拖动移动地址分组；双击展开或折叠';
   tr.addEventListener('click', (e) => {
     if (e.target.closest('button')) return;
     selectSite(group.baseUrl);
@@ -1771,13 +1769,12 @@ function renderGroupRow(group) {
   });
   attachGroupDragEvents(tr, group.baseUrl);
   tr.innerHTML = `
-    <td class="group-cell" colspan="8">
+    <td class="group-cell" colspan="7">
       <div class="group-box">
         <div class="group-main">
           <button type="button" class="fold-btn" data-group-action="toggle" data-group-key="${key}" title="${collapsed ? '展开' : '折叠'}">
             <span class="fold-icon ${collapsed ? '' : 'expanded'}" aria-hidden="true"></span>
           </button>
-          <span class="drag-handle group-drag-handle" title="拖动地址分组排序" aria-label="拖动地址分组排序">☰</span>
           <span class="group-url mono">${group.baseUrl}</span>
           <span class="group-stats">
             <span class="group-stat">账号数 ${group.accounts.length}</span>
@@ -1821,11 +1818,10 @@ function renderTable() {
       const deleteLabel = activeAction === 'delete' ? '处理中' : '删除';
 
       tr.innerHTML = `
-        <td class="drag-handle" aria-label="排序">☰</td>
         <td class="mono">${index + 1}</td>
         <td>${acc.name || ''}</td>
         <td>${running ? '<span class="tag run">处理中</span>' : maskTag(acc.enabled)}</td>
-        <td class="mono">${acc.provider || 'new-api'}${acc.new_api_user ? ' / ' + acc.new_api_user : ''}</td>
+        <td class="mono">${providerDisplay(acc)}${accountUserDisplay(acc) ? ' / ' + accountUserDisplay(acc) : ''}</td>
         <td class="small">${rowSum.checkinText}</td>
         <td class="small status-short" title="${(state.statusResults[key]?.api_error || '').replace(/"/g, '&quot;')}">${rowSum.statusText}</td>
         <td>
@@ -2869,7 +2865,7 @@ function compareAccountsForSort(a, b, indexMap) {
 async function applyTopSort() {
   state.sortField = el.sortField.value || 'manual';
   if (state.sortField === 'manual') {
-    notify('warn2', '请选择排序字段', '可以选择 new_api_user 或额度进行排序。');
+    notify('warn2', '请选择排序字段', '可以选择用户标识或额度进行排序。');
     return;
   }
   if (state.sortField === 'quota' && !state.accounts.some((acc) => Number.isFinite(getAccountQuotaMoney(acc)))) {
@@ -2884,7 +2880,7 @@ async function applyTopSort() {
       method: 'POST',
       body: JSON.stringify({ ordered_ids: state.accounts.map((acc) => Number(acc.account_index)) })
     });
-    const label = state.sortField === 'quota' ? '额度' : 'new_api_user';
+    const label = state.sortField === 'quota' ? '额度' : '用户标识';
     notify('ok', '排序已更新', `${label} 已按${state.sortDir === 'asc' ? '升序' : '降序'}排列。`);
     log(`排序已更新：${label} ${state.sortDir === 'asc' ? '升序' : '降序'}`, 'ok');
   } catch (e) {
@@ -2923,8 +2919,9 @@ async function importAccountJson() {
       body: JSON.stringify({ json: raw })
     });
     fillModalFromAuthAccount(data.account);
+    const providerName = providerDisplay(data.account || {});
     const notes = Array.isArray(data.account?.notes) ? data.account.notes.join('；') : '';
-    el.authStatus.textContent = `解析成功：${data.account?.provider || ''} / ${data.account?.name || ''}${notes ? '。' + notes : ''}。请确认后点击“创建账号”。`;
+    el.authStatus.textContent = `解析成功：${providerName} / ${data.account?.name || ''}${notes ? '。' + notes : ''}。请确认后点击“创建账号”。`;
     notify('ok', 'JSON 已解析', '账号信息已自动回填，请确认后创建账号。');
   } catch (e) {
     el.authStatus.textContent = e.message || String(e);
@@ -3072,7 +3069,7 @@ function updateProviderHints(scope) {
     cookie.value = buildCookieFromFields('', '', cookie.value, session.value);
   } else {
     user.disabled = false;
-    user.previousElementSibling.textContent = 'new_api_user';
+    user.previousElementSibling.textContent = provider === 'custom' ? '用户标识（可选）' : '用户标识';
     session.previousElementSibling.textContent = 'Session / Bearer Token';
     session.placeholder = '';
     mid.value = '';
