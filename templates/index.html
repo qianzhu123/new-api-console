@@ -1673,14 +1673,6 @@ function isSub2apiOnlySite(baseUrl) {
   return !!group && group.accounts.length > 0 && group.accounts.every((acc) => normalizeProvider(acc.provider || 'new-api') === 'sub2api');
 }
 
-function isE2ezSite(baseUrl) {
-  try {
-    return new URL(normalizeBaseUrlInput(baseUrl)).hostname === 'api.e2ez.com';
-  } catch {
-    return false;
-  }
-}
-
 function isCustomAuthCookieSite(baseUrl) {
   try {
     return new URL(normalizeBaseUrlInput(baseUrl)).hostname === 'free.supxh.xin';
@@ -1689,14 +1681,23 @@ function isCustomAuthCookieSite(baseUrl) {
   }
 }
 
+function isForcedUnsupportedCheckinSite(baseUrl) {
+  try {
+    return new URL(normalizeBaseUrlInput(baseUrl)).hostname === 'api.e2ez.com';
+  } catch {
+    return false;
+  }
+}
+
 function siteHasDedicatedCheckin(baseUrl) {
-  return isE2ezSite(baseUrl) || isCustomAuthCookieSite(baseUrl);
+  return isCustomAuthCookieSite(baseUrl);
 }
 
 function groupKeyFromUrl(url) { return `base:${url}`; }
 
 function accountCheckinUnsupported(acc) {
   const baseUrl = normalizeBaseUrlInput(acc?.base_url || state.defaultBaseUrl);
+  if (isForcedUnsupportedCheckinSite(baseUrl)) return true;
   if (siteHasDedicatedCheckin(baseUrl) || normalizeProvider(acc?.provider) === 'custom') return false;
   const key = accountKey(acc);
   if ((state.signinStatus[key] || acc.signin_status) === '不可签到') return true;
@@ -1713,6 +1714,12 @@ function markAccountSiteCheckinUnsupported(key) {
   const account = findAccountByKey(key);
   if (!account) return;
   const baseUrl = normalizeBaseUrlInput(account.base_url || state.defaultBaseUrl);
+  if (isForcedUnsupportedCheckinSite(baseUrl)) {
+    for (const item of state.accounts) {
+      if (normalizeBaseUrlInput(item.base_url || state.defaultBaseUrl) === baseUrl) state.signinStatus[accountKey(item)] = '不可签到';
+    }
+    return;
+  }
   if (siteHasDedicatedCheckin(baseUrl) || normalizeProvider(account.provider) === 'custom') return;
   for (const item of state.accounts) {
     if (normalizeBaseUrlInput(item.base_url || state.defaultBaseUrl) !== baseUrl) continue;

@@ -27,7 +27,6 @@ SITE_INFO_PATH = DATA_DIR / "site_info.json"
 DEFAULT_BASE_URL = "https://www.new-api.com"
 BASE_URL_ENV_KEY = "NEW_API_BASE_URL"
 CHECKIN_PATH = "/api/user/checkin"
-E2EZ_CHECKIN_DRAW_PATH = "/checkin/api/draw"
 CUSTOM_SIGNIN_PATH = "/api/user/signin"
 CUSTOM_SELF_PATH = "/api/auth/me"
 SELF_PATH = "/api/user/self"
@@ -1436,18 +1435,18 @@ def checkin_response_unsupported(status_code: int, text: str) -> bool:
     return contains_any(text, CHECKIN_UNSUPPORTED_KEYWORDS)
 
 
-def is_e2ez_site(base_url: str) -> bool:
-    parsed = urlparse(normalize_base_url(base_url))
-    return parsed.hostname == "api.e2ez.com"
-
-
 def is_custom_auth_cookie_site(base_url: str) -> bool:
     parsed = urlparse(normalize_base_url(base_url))
     return parsed.hostname == "free.supxh.xin"
 
 
+def is_forced_unsupported_checkin_site(base_url: str) -> bool:
+    parsed = urlparse(normalize_base_url(base_url))
+    return parsed.hostname == "api.e2ez.com"
+
+
 def is_site_with_dedicated_checkin(base_url: str) -> bool:
-    return is_e2ez_site(base_url) or is_custom_auth_cookie_site(base_url)
+    return is_custom_auth_cookie_site(base_url)
 
 
 def build_custom_cookie_auth(account: dict[str, Any]) -> tuple[dict[str, str], dict[str, str]]:
@@ -1548,90 +1547,6 @@ def request_custom_self_for_auth(base_url: str, auth_token: str, cookie_header: 
     return payload, normalize_custom_user_data(payload), None
 
 
-def build_e2ez_checkin_cookies(account: dict[str, Any]) -> dict[str, str]:
-    cookies = parse_cookie_header(str(account.get("cookie") or ""))
-    session_value = str(account.get("session") or "").strip()
-    if session_value and "checkin_session" not in cookies:
-        cookies["checkin_session"] = session_value
-    return cookies
-
-
-def build_e2ez_checkin_headers(base_url: str) -> dict[str, str]:
-    headers = dict(DEFAULT_HEADERS)
-    headers.update(
-        {
-            "accept": "*/*",
-            "content-type": "application/json",
-            "origin": base_url,
-            "referer": f"{base_url}/checkin/",
-            "dnt": "1",
-            "pragma": "no-cache",
-            "cache-control": "no-store",
-        }
-    )
-    return headers
-
-
-def e2ez_draw_result_from_payload(payload: dict[str, Any]) -> tuple[str, str]:
-    data = payload.get("data") if isinstance(payload, dict) else None
-    if not isinstance(data, dict):
-        return "SIGNED_NOW", "签到成功"
-    draw = data.get("draw")
-    already_drawn = data.get("already_drawn")
-    if not isinstance(draw, dict):
-        today_draw = data.get("today_draw")
-        if isinstance(today_draw, dict):
-            draw = today_draw
-            already_drawn = True
-    prize_amount = draw.get("prize_amount") if isinstance(draw, dict) else None
-    if prize_amount is None:
-        return ("ALREADY_SIGNED", "今日已签到") if already_drawn else ("SIGNED_NOW", "签到成功")
-    message = f"今日已签到，奖励 {prize_amount}" if already_drawn else f"签到成功，奖励 {prize_amount}"
-    return ("ALREADY_SIGNED" if already_drawn else "SIGNED_NOW"), message
-
-
-def classify_e2ez_checkin(account: dict[str, Any], base_url: str) -> dict[str, Any]:
-    name = account.get("name") or "unknown"
-    account_index = int(account.get("account_index", 0) or 0)
-    cookies = build_e2ez_checkin_cookies(account)
-    if "checkin_session" not in cookies:
-        return {
-            "account": name,
-            "account_index": account_index,
-            "state": "FAILED",
-            "message": "missing checkin_session cookie",
-            "timestamp": now_ts(),
-        }
-    resp = requests.post(
-        base_url + E2EZ_CHECKIN_DRAW_PATH,
-        headers=build_e2ez_checkin_headers(base_url),
-        cookies=cookies,
-        json={},
-        timeout=TIMEOUT_SECONDS,
-    )
-    try:
-        payload: Any = resp.json()
-    except ValueError:
-        payload = {"raw": resp.text[:500]}
-    if not isinstance(payload, dict):
-        payload = {"raw": payload}
-    error = api_payload_error(payload, resp)
-    if error:
-        state = "FAILED"
-        message = error
-    else:
-        state, message = e2ez_draw_result_from_payload(payload)
-    return {
-        "account": name,
-        "account_index": account_index,
-        "state": state,
-        "message": message,
-        "http_status": resp.status_code,
-        "payload": payload,
-        "timestamp": now_ts(),
-    }
-
-
 def classify_checkin(account: dict[str, Any]) -> dict[str, Any]:
     name = account.get("name") or "unknown"
     account_index = int(account.get("account_index", 0) or 0)
@@ -1640,8 +1555,15 @@ def classify_checkin(account: dict[str, Any]) -> dict[str, Any]:
     base_url = normalize_base_url(str(account.get("base_url") or get_base_url()))
     provider = account_provider(account)
 
-    if is_e2ez_site(base_url):
-        return classify_e2ez_checkin(account, base_url)
+    if is_forced_unsupported_checkin_site(base_url):
+        return {
+            "account": name,
+            "account_index": account_index,
+            "state": "UNSUPPORTED",
+            "message": "该网站不支持签到",
+            "timestamp": now_ts(),
+        }
+
     if is_custom_auth_cookie_site(base_url) or provider == "custom":
         return classify_custom_cookie_checkin(account, base_url)
 
@@ -1988,6 +1910,8 @@ def get_next_account_index(accounts: list[dict[str, Any]]) -> int:
 
 
 def normalize_dedicated_signin_status(base_url: str, signin_status: str) -> str:
+    if is_forced_unsupported_checkin_site(base_url):
+        return "不可签到"
     if is_site_with_dedicated_checkin(normalize_base_url(base_url)) and signin_status == "不可签到":
         return "未签到"
     return signin_status
@@ -1995,6 +1919,10 @@ def normalize_dedicated_signin_status(base_url: str, signin_status: str) -> str:
 
 def sanitize_dedicated_status_result(base_url: str, result: dict[str, Any] | None) -> dict[str, Any] | None:
     if not isinstance(result, dict):
+        return result
+    if is_forced_unsupported_checkin_site(base_url):
+        result = dict(result)
+        result["signin_status"] = "不可签到"
         return result
     if not is_site_with_dedicated_checkin(normalize_base_url(base_url)):
         return result
