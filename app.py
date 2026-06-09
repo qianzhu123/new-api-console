@@ -862,6 +862,8 @@ def get_site_info(base_url: str) -> dict[str, Any]:
         "remark": str(entry.get("remark") or ""),
         "models": [str(model) for model in models if str(model).strip()] if isinstance(models, list) else [],
         "models_loaded": isinstance(models, list),
+        "models_failed": bool(entry.get("models_failed")),
+        "models_error": str(entry.get("models_error") or ""),
         "models_updated_at": str(entry.get("models_updated_at") or ""),
     }
 
@@ -871,6 +873,8 @@ def update_site_info(
     *,
     remark: str | None = None,
     models: list[str] | None = None,
+    models_failed: bool | None = None,
+    models_error: str | None = None,
 ) -> dict[str, Any]:
     normalized_url = normalize_base_url(base_url)
     with config_lock:
@@ -888,6 +892,12 @@ def update_site_info(
             entry["remark_updated_at"] = now_ts()
         if models is not None:
             entry["models"] = models
+            entry["models_failed"] = False
+            entry["models_error"] = ""
+            entry["models_updated_at"] = now_ts()
+        if models_failed is not None:
+            entry["models_failed"] = bool(models_failed)
+            entry["models_error"] = str(models_error or "") if models_failed else ""
             entry["models_updated_at"] = now_ts()
         entry["updated_at"] = now_ts()
         atomic_save_json(SITE_INFO_PATH, store)
@@ -2055,6 +2065,54 @@ def find_duplicate_account(
     return None
 
 
+def account_import_identity(account: dict[str, Any]) -> str:
+    identity = str(account.get("new_api_user") or "").strip().lower()
+    if identity:
+        return identity
+    nested_identity = account.get("identity")
+    if isinstance(nested_identity, dict):
+        for key in ("id", "userId", "user_id", "username", "name", "email"):
+            value = str(nested_identity.get(key) or "").strip().lower()
+            if value:
+                return value
+    return str(account.get("name") or "").strip().lower()
+
+
+def find_import_update_account(
+    accounts: list[dict[str, Any]],
+    imported_account: dict[str, Any],
+) -> tuple[int, dict[str, Any]] | tuple[int, None]:
+    wanted_url = normalize_base_url(str(imported_account.get("base_url") or ""))
+    wanted_identity = account_import_identity(imported_account)
+    wanted_name = str(imported_account.get("name") or "").strip().lower()
+    if not wanted_url or not (wanted_identity or wanted_name):
+        return -1, None
+
+    for idx, account in enumerate(accounts):
+        if not isinstance(account, dict):
+            continue
+        account_url = normalize_base_url(str(account.get("base_url") or get_base_url()))
+        if account_url != wanted_url:
+            continue
+        account_identity = account_import_identity(account)
+        account_name = str(account.get("name") or "").strip().lower()
+        if wanted_identity and account_identity and account_identity == wanted_identity:
+            return idx, account
+        if wanted_name and account_name and account_name == wanted_name:
+            return idx, account
+    return -1, None
+
+
+def merge_imported_account(existing: dict[str, Any], imported: dict[str, Any]) -> dict[str, Any]:
+    merged = dict(existing)
+    preserved_index = int(existing.get("account_index", 0) or 0)
+    preserved_enabled = bool(existing.get("enabled", True))
+    merged.update(imported)
+    merged["account_index"] = preserved_index
+    merged["enabled"] = preserved_enabled
+    return normalize_account(merged, fallback_base_url=str(existing.get("base_url") or imported.get("base_url") or ""))
+
+
 def ensure_unique_account(
     accounts: list[dict[str, Any]],
     new_account: dict[str, Any],
@@ -3100,11 +3158,15 @@ def site_models():
     try:
         models, info, api_response = fetch_site_models(base_url)
     except ValueError as exc:
-        return jsonify({"ok": False, "error": str(exc)}), 400
+        info = update_site_info(base_url, models_failed=True, models_error=str(exc))
+        return jsonify({"ok": False, "error": str(exc), "site": info}), 400
     except requests.RequestException as exc:
-        return jsonify({"ok": False, "error": f"network error: {exc}"}), 502
+        error = f"network error: {exc}"
+        info = update_site_info(base_url, models_failed=True, models_error=error)
+        return jsonify({"ok": False, "error": error, "site": info}), 502
     except RuntimeError as exc:
-        return jsonify({"ok": False, "error": str(exc)}), 502
+        info = update_site_info(base_url, models_failed=True, models_error=str(exc))
+        return jsonify({"ok": False, "error": str(exc), "site": info}), 502
     return jsonify({"ok": True, "models": models, "site": info, "payload": api_response})
 
 
@@ -3120,8 +3182,26 @@ def auth_import_json():
         else:
             raise ValueError("请粘贴 JSON 文本")
         account, notes = build_auth_account_from_import_json(import_json)
-        ensure_unique_account(load_config().get("accounts", []), account)
-        return jsonify({"ok": True, "account": account, "notes": notes})
+        cfg = load_config(normalize_and_persist=False)
+        accounts = cfg.get("accounts", [])
+        if not isinstance(accounts, list):
+            accounts = []
+            cfg["accounts"] = accounts
+        idx, existing = find_import_update_account(accounts, account)
+        if existing is not None:
+            updated = merge_imported_account(existing, account)
+            accounts[idx] = updated
+            cfg["accounts"] = accounts
+            cfg = save_config(cfg)
+            return jsonify({
+                "ok": True,
+                "updated": True,
+                "account": to_public_account(updated, signin_status=get_signin_status_today(str(updated.get("account_index") or "")), last_status=get_status_cache(str(updated.get("account_index") or ""))),
+                "accounts": build_public_accounts(cfg["accounts"]),
+                "notes": list(notes) + ["已发现相同账号标识，已更新现有账号信息"],
+            })
+        ensure_unique_account(accounts, account)
+        return jsonify({"ok": True, "updated": False, "account": account, "notes": notes})
     except ValueError as exc:
         message = str(exc)
         status = 409 if "账号已存在" in message else 400

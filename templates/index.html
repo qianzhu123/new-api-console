@@ -2262,7 +2262,7 @@ async function loadSiteInfo(baseUrl) {
     const data = await api(`/api/sites/info?base_url=${encodeURIComponent(normalized)}`);
     state.siteInfo[normalized] = data.site || {};
     renderDetail();
-    if (!data.site?.models_loaded && !isSub2apiOnlySite(normalized)) await refreshSiteModels(normalized, true);
+    if (!data.site?.models_loaded && !data.site?.models_failed && !isSub2apiOnlySite(normalized)) await refreshSiteModels(normalized, true);
   } catch (e) {
     log(`${normalized} 地址信息加载失败：${e.message || e}`, 'bad2');
     notify('bad2', '地址信息加载失败', `${normalized}：${e.message || e}`);
@@ -2414,6 +2414,7 @@ async function refreshSiteModels(baseUrl, automatic = false) {
     log(`${normalized} 模型列表已更新，共 ${data.models?.length || 0} 个`, 'ok');
     notify('ok', '模型列表已更新', `${normalized}：${data.models?.length || 0} 个匹配模型。`);
   } catch (e) {
+    if (e.data?.site) state.siteInfo[normalized] = e.data.site;
     log(`${normalized} 模型检测失败：${e.message || e}`, 'bad2');
     notify('bad2', '模型检测失败', `${normalized}：${e.message || e}`);
   } finally {
@@ -2434,6 +2435,10 @@ function renderSiteDetail() {
   const info = state.siteInfo[baseUrl] || {};
   const loading = state.siteLoading[baseUrl] || '';
   const models = Array.isArray(info.models) ? info.models : [];
+  const modelsFailed = !!info.models_failed;
+  const modelEmptyText = modelsFailed
+    ? '无法获取'
+    : (info.models_loaded ? '未发现匹配的 GPT、Claude 或 Gemini 模型。' : '尚未检测模型。');
   const sub2apiOnly = isSub2apiOnlySite(baseUrl);
   const signText = stats.checkinUnsupported ? '不可签到' : `${stats.signed}/${group.accounts.length}`;
   el.detailEmpty.style.display = 'none';
@@ -2497,7 +2502,7 @@ function renderSiteDetail() {
           ? '<div class="site-model-empty">正在加载地址信息...</div>'
           : models.length
             ? `<div class="site-model-panel ${isModelPanelCollapsed(baseUrl, models) ? 'collapsed' : ''}">${renderModelPanelSummary(models)}${renderModelGroups(models, baseUrl)}</div>`
-            : `<div class="site-model-empty">${info.models_loaded ? '未发现匹配的 GPT、Claude 或 Gemini 模型。' : '尚未检测模型。'}</div>`}
+            : `<div class="site-model-empty" title="${escapeHtml(info.models_error || '')}">${modelEmptyText}</div>`}
       </div>
     </div>`}
   `;
@@ -2966,11 +2971,19 @@ async function importAccountJson() {
       method: 'POST',
       body: JSON.stringify({ json: raw })
     });
-    fillModalFromAuthAccount(data.account);
     const providerName = providerDisplay(data.account || {});
-    const notes = Array.isArray(data.account?.notes) ? data.account.notes.join('；') : '';
-    el.authStatus.textContent = `解析成功：${providerName} / ${data.account?.name || ''}${notes ? '。' + notes : ''}。请确认后点击“创建账号”。`;
-    notify('ok', 'JSON 已解析', '账号信息已自动回填，请确认后创建账号。');
+    const notes = Array.isArray(data.notes) ? data.notes.join('；') : '';
+    if (data.updated) {
+      el.authStatus.textContent = `已更新已有账号：${providerName} / ${data.account?.name || ''}${notes ? '；' + notes : ''}。`;
+      notify('ok', '账号已更新', '发现相同账号标识，已用导入 JSON 更新现有账号。');
+      await refreshAccounts();
+      const key = accountKey(data.account);
+      if (key) selectAccount(key);
+      return;
+    }
+    fillModalFromAuthAccount(data.account);
+    el.authStatus.textContent = `解析成功：${providerName} / ${data.account?.name || ''}${notes ? '；' + notes : ''}。确认后可创建账号。`;
+    notify('ok', 'JSON 已解析', '账号信息已自动填入，请确认后创建账号。');
   } catch (e) {
     el.authStatus.textContent = e.message || String(e);
     notify('bad2', 'JSON 解析失败', e.message || String(e));
