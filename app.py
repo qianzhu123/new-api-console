@@ -27,6 +27,7 @@ SITE_INFO_PATH = DATA_DIR / "site_info.json"
 DEFAULT_BASE_URL = "https://www.new-api.com"
 BASE_URL_ENV_KEY = "NEW_API_BASE_URL"
 CHECKIN_PATH = "/api/user/checkin"
+E2EZ_CHECKIN_DRAW_PATH = "/checkin/api/draw"
 SELF_PATH = "/api/user/self"
 STATUS_PATH = "/api/status"
 TOKEN_GROUPS_PATH = "/api/user/self/groups"
@@ -1405,6 +1406,95 @@ def checkin_response_unsupported(status_code: int, text: str) -> bool:
     return contains_any(text, CHECKIN_UNSUPPORTED_KEYWORDS)
 
 
+def is_e2ez_site(base_url: str) -> bool:
+    parsed = urlparse(normalize_base_url(base_url))
+    return parsed.hostname == "api.e2ez.com"
+
+
+def build_e2ez_checkin_cookies(account: dict[str, Any]) -> dict[str, str]:
+    cookies = parse_cookie_header(str(account.get("cookie") or ""))
+    session_value = str(account.get("session") or "").strip()
+    if session_value and "checkin_session" not in cookies:
+        cookies["checkin_session"] = session_value
+    return cookies
+
+
+def build_e2ez_checkin_headers(base_url: str) -> dict[str, str]:
+    headers = dict(DEFAULT_HEADERS)
+    headers.update(
+        {
+            "accept": "*/*",
+            "content-type": "application/json",
+            "origin": base_url,
+            "referer": f"{base_url}/checkin/",
+            "dnt": "1",
+            "pragma": "no-cache",
+            "cache-control": "no-store",
+        }
+    )
+    return headers
+
+
+def e2ez_draw_result_from_payload(payload: dict[str, Any]) -> tuple[str, str]:
+    data = payload.get("data") if isinstance(payload, dict) else None
+    if not isinstance(data, dict):
+        return "SIGNED_NOW", "签到成功"
+    draw = data.get("draw")
+    already_drawn = data.get("already_drawn")
+    if not isinstance(draw, dict):
+        today_draw = data.get("today_draw")
+        if isinstance(today_draw, dict):
+            draw = today_draw
+            already_drawn = True
+    prize_amount = draw.get("prize_amount") if isinstance(draw, dict) else None
+    if prize_amount is None:
+        return ("ALREADY_SIGNED", "今日已签到") if already_drawn else ("SIGNED_NOW", "签到成功")
+    message = f"今日已签到，奖励 {prize_amount}" if already_drawn else f"签到成功，奖励 {prize_amount}"
+    return ("ALREADY_SIGNED" if already_drawn else "SIGNED_NOW"), message
+
+
+def classify_e2ez_checkin(account: dict[str, Any], base_url: str) -> dict[str, Any]:
+    name = account.get("name") or "unknown"
+    account_index = int(account.get("account_index", 0) or 0)
+    cookies = build_e2ez_checkin_cookies(account)
+    if "checkin_session" not in cookies:
+        return {
+            "account": name,
+            "account_index": account_index,
+            "state": "FAILED",
+            "message": "missing checkin_session cookie",
+            "timestamp": now_ts(),
+        }
+    resp = requests.post(
+        base_url + E2EZ_CHECKIN_DRAW_PATH,
+        headers=build_e2ez_checkin_headers(base_url),
+        cookies=cookies,
+        json={},
+        timeout=TIMEOUT_SECONDS,
+    )
+    try:
+        payload: Any = resp.json()
+    except ValueError:
+        payload = {"raw": resp.text[:500]}
+    if not isinstance(payload, dict):
+        payload = {"raw": payload}
+    error = api_payload_error(payload, resp)
+    if error:
+        state = "FAILED"
+        message = error
+    else:
+        state, message = e2ez_draw_result_from_payload(payload)
+    return {
+        "account": name,
+        "account_index": account_index,
+        "state": state,
+        "message": message,
+        "http_status": resp.status_code,
+        "payload": payload,
+        "timestamp": now_ts(),
+    }
+
+
 def classify_checkin(account: dict[str, Any]) -> dict[str, Any]:
     name = account.get("name") or "unknown"
     account_index = int(account.get("account_index", 0) or 0)
@@ -1412,6 +1502,9 @@ def classify_checkin(account: dict[str, Any]) -> dict[str, Any]:
     user_id = (account.get("new_api_user") or "").strip()
     base_url = normalize_base_url(str(account.get("base_url") or get_base_url()))
     provider = account_provider(account)
+
+    if is_e2ez_site(base_url):
+        return classify_e2ez_checkin(account, base_url)
 
     if provider == "sub2api":
         return {
@@ -2513,8 +2606,11 @@ def checkin_all():
     for account in accounts:
         account_index = int(account.get("account_index", 0) or 0)
         runtime_key = str(account_index) if account_index > 0 else str(account.get("name") or "")
+        account_base_url = normalize_base_url(str(account.get("base_url") or get_base_url()))
+        if is_e2ez_site(account_base_url):
+            continue
         if get_signin_status_today(runtime_key) == "不可签到" or cached_checkin_disabled(account_index):
-            unsupported_base_urls.add(normalize_base_url(str(account.get("base_url") or get_base_url())))
+            unsupported_base_urls.add(account_base_url)
     for base_url in unsupported_base_urls:
         set_base_url_signin_status_today(all_accounts, base_url, "不可签到")
 
@@ -2526,7 +2622,7 @@ def checkin_all():
         runtime_key = str(account_index) if account_index > 0 else str(account.get("name") or "")
         account_base_url = normalize_base_url(str(account.get("base_url") or get_base_url()))
         signin_status = get_signin_status_today(runtime_key)
-        if account_base_url in unsupported_base_urls or signin_status == "不可签到":
+        if not is_e2ez_site(account_base_url) and (account_base_url in unsupported_base_urls or signin_status == "不可签到"):
             skipped_unsupported += 1
             continue
         if signin_status != "未签到":
@@ -2553,6 +2649,7 @@ def checkin_all():
         normalize_base_url(str(account.get("base_url") or get_base_url()))
         for account, result in zip(checkin_accounts, results)
         if result.get("state") == "UNSUPPORTED"
+        and not is_e2ez_site(normalize_base_url(str(account.get("base_url") or get_base_url())))
     }
     for base_url in unsupported_urls:
         set_base_url_signin_status_today(all_accounts, base_url, "不可签到")
@@ -2612,7 +2709,7 @@ def status_all():
 
     results = run_batch_parallel(accounts, check_account_status)
     for base_url, system_status in system_status_cache.items():
-        if system_status.get("checkin_enabled") is False:
+        if system_status.get("checkin_enabled") is False and not is_e2ez_site(base_url):
             set_base_url_signin_status_today(all_accounts, base_url, "不可签到")
     for result in results:
         runtime_key = str(result.get("account_index") or "")
