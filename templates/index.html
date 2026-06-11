@@ -303,20 +303,6 @@
       min-height: 72px;
       margin-bottom: 8px;
     }
-    .account-remark {
-      margin: 0 0 12px;
-      padding: 9px 10px;
-      border: 1px solid rgba(176,139,47,.2);
-      border-radius: 10px;
-      background: rgba(255,255,255,.58);
-      color: var(--sub);
-      cursor: text;
-      word-break: break-word;
-    }
-    .account-remark strong {
-      color: #4a3827;
-      margin-right: 6px;
-    }
     .site-model-groups {
       display: grid;
       grid-template-columns: 1fr;
@@ -2331,6 +2317,31 @@ async function saveSiteRemark(baseUrl) {
   }
 }
 
+async function saveAccountRemark() {
+  if (!state.selected || !state.editingAccountKey) return;
+  const textarea = el.detailStatus.querySelector('[data-account-remark]');
+  const button = el.detailStatus.querySelector('[data-save-account-remark]');
+  const remark = String(textarea?.value || '').trim();
+  if (remark.length > 500) {
+    notify('bad2', '备注保存失败', '账号备注不能超过 500 个字符。');
+    return;
+  }
+  el.fRemark.value = remark;
+  if (button) {
+    button.disabled = true;
+    button.textContent = '保存中';
+  }
+  try {
+    await saveForm();
+  } catch (e) {
+    if (button) {
+      button.disabled = false;
+      button.textContent = '保存备注';
+    }
+    notify('bad2', '备注保存失败', e.message || String(e));
+  }
+}
+
 const MODEL_GROUP_RULES = [
   { key: 'gpt', title: 'GPT / OpenAI', keywords: ['gpt', 'openai', 'chatgpt', 'o1', 'o3', 'o4'] },
   { key: 'claude', title: 'Claude', keywords: ['claude', 'anthropic'] },
@@ -2630,7 +2641,13 @@ function renderDetail() {
         <div class="metric-value ${metricTone(yesterdayMoney)}">${formatMoney(yesterdayMoney, sys, true)}</div>
       </div>
     </div>
-    <div class="account-remark" data-focus-account-remark title="点击编辑账号备注"><strong>账号备注：</strong>${escapeHtml(acc.remark || '未填写')}</div>
+    <div class="site-section account-remark-section">
+      <div class="site-section-head">
+        <div class="site-section-title">账号备注</div>
+        <button type="button" data-save-account-remark>保存备注</button>
+      </div>
+      <textarea class="site-remark-editor" data-account-remark maxlength="500" placeholder="填写该账号的备注信息">${escapeHtml(acc.remark || '')}</textarea>
+    </div>
     <div class="small" style="margin-top:12px;">上次检测时间：${prevTime}${sourceTip}</div>
     ${sr && !sr.session_valid ? `<div class="small bad2" style="margin-top:8px; word-break:break-word;">异常信息：${sr.api_error || '接口返回异常'}<\/div>` : ''}
     <div id="token-panel" class="token-panel"></div>
@@ -2639,11 +2656,8 @@ function renderDetail() {
   if (copyAddressButton) {
     copyAddressButton.addEventListener('click', () => copyText(acc.base_url || '', '地址已复制'));
   }
-  const accountRemark = el.detailStatus.querySelector('[data-focus-account-remark]');
-  if (accountRemark) accountRemark.addEventListener('click', () => {
-    el.fRemark.focus();
-    el.fRemark.scrollIntoView({ behavior: 'smooth', block: 'center' });
-  });
+  const saveAccountRemarkButton = el.detailStatus.querySelector('[data-save-account-remark]');
+  if (saveAccountRemarkButton) saveAccountRemarkButton.addEventListener('click', saveAccountRemark);
   fitMetricValues();
   flashDetail();
   fillForm(acc);

@@ -150,7 +150,11 @@ def test_frontend_contains_account_remark_fields_and_detail():
 
     assert 'id="f-remark"' in html
     assert 'id="m-remark"' in html
-    assert "account-remark" in html
+    assert 'class="site-section account-remark-section"' in html
+    assert "data-account-remark" in html
+    assert "data-save-account-remark" in html
+    assert "function saveAccountRemark()" in html
+    assert "data-focus-account-remark" not in html
     assert "remark: fields.remark.value.trim()" in html
 
 
