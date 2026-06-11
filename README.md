@@ -5,6 +5,7 @@ A local Flask web console for multi-account new-api management.
 ## Features
 
 - Multi-account management (add, edit, enable/disable, delete)
+- Optional per-account remarks, editable from the account form and shown in account details
 - Per-account domain (`base_url`) configuration (required when adding/editing)
 - `new_api_user` is optional when adding or editing an account; when provided, it must be numeric.
 - Address-level detail view with aggregate balances, editable remarks, and cached supported-model information
@@ -32,6 +33,7 @@ A local Flask web console for multi-account new-api management.
 ```text
 qiandao/
 ├─ app.py                  # Flask backend
+├─ AI_PROJECT_INDEX.md     # Detailed maintenance and AI navigation index
 ├─ run_web.bat             # Start local web server
 ├─ data/                   # Local runtime data (ignored by git)
 │  ├─ session.json         # Local account config
@@ -42,6 +44,9 @@ qiandao/
 │  └─ site_info.json       # Address remarks and filtered model cache
 ├─ templates/
 │  └─ index.html           # Web UI
+├─ tests/                  # Account, sign-in, address/model, and token tests
+├─ tools/                  # JSON collectors and browser extension
+├─ build_artifacts/        # Launcher source/spec and generated build work
 ├─ .gitignore
 ├─ README.md
 ```
@@ -67,7 +72,8 @@ No browser automation dependency is required for JSON import. The previous brows
       "enabled": true,
       "base_url": "https://your-service-domain.com",
       "new_api_user": "1571",
-      "session": "YOUR_SESSION"
+      "session": "YOUR_SESSION",
+      "remark": "Optional note for this account"
     }
   ]
 }
@@ -128,7 +134,8 @@ run_web.bat
 
 - Single-click an address group to show its account count, available count, sign-in summary, aggregate balance metrics, address remark, and supported models.
 - Double-click an address group to expand or collapse it.
-- Address remarks and model results are stored in `data/site_info.json`; account records no longer contain remarks.
+- Address remarks and model results are stored in `data/site_info.json`.
+- Account remarks belong to individual accounts and are stored in `data/session.json`; importing JSON over an existing account preserves its current remark.
 - Model detection calls `/api/user/models` using the first account under that address.
 - Only model names containing `gpt-image-2`, `gpt`, `claude`, or `gemini` are displayed.
 
@@ -173,4 +180,3 @@ The extension only targets `new-api` and `sub2api` import fields. It displays th
 - Keep `data/session.json` local.
 - Keep `data/token_cache.json` local.
 - Do not share `session` or token keys publicly.
-

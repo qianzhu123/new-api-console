@@ -66,8 +66,8 @@ def test_token_groups_use_account_credentials(tmp_path, monkeypatch):
 
     assert response.status_code == 200
     assert response.get_json()["groups"] == [
-        {"id": "awsq", "desc": "awsq desc", "ratio": 1.89},
-        {"id": "default", "desc": "default desc", "ratio": 1.5},
+        {"id": "awsq", "name": "awsq desc", "desc": "awsq desc", "ratio": 1.89, "platform": None},
+        {"id": "default", "name": "default desc", "desc": "default desc", "ratio": 1.5, "platform": None},
     ]
     assert calls[0]["url"] == "https://example.test/api/user/self/groups"
     assert calls[0]["cookies"] == {"session": "session-value-that-is-long-enough"}
@@ -125,7 +125,9 @@ def test_token_groups_force_refresh_updates_local_cache(monkeypatch):
 
     assert response.status_code == 200
     assert response.get_json()["source"] == "remote"
-    assert response.get_json()["groups"] == [{"id": "fresh", "desc": "fresh desc", "ratio": 2}]
+    assert response.get_json()["groups"] == [
+        {"id": "fresh", "name": "fresh desc", "desc": "fresh desc", "ratio": 2, "platform": None}
+    ]
     assert calls == ["https://example.test/api/user/self/groups"]
     cached = json.loads(app.TOKEN_CACHE_PATH.read_text(encoding="utf-8"))
     assert cached["accounts"][app.token_cache_key(account)]["groups"][0]["id"] == "fresh"
@@ -187,7 +189,9 @@ def test_create_token_group_error_refreshes_group_cache(monkeypatch):
     assert response.status_code == 502
     payload = response.get_json()
     assert payload["groups_refreshed"] is True
-    assert payload["groups"] == [{"id": "new-group", "desc": "new desc", "ratio": 3}]
+    assert payload["groups"] == [
+        {"id": "new-group", "name": "new desc", "desc": "new desc", "ratio": 3, "platform": None}
+    ]
     assert calls == [
         ("post", "https://example.test/api/token/"),
         ("get", "https://example.test/api/user/self/groups"),

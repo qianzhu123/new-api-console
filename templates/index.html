@@ -303,6 +303,20 @@
       min-height: 72px;
       margin-bottom: 8px;
     }
+    .account-remark {
+      margin: 0 0 12px;
+      padding: 9px 10px;
+      border: 1px solid rgba(176,139,47,.2);
+      border-radius: 10px;
+      background: rgba(255,255,255,.58);
+      color: var(--sub);
+      cursor: text;
+      word-break: break-word;
+    }
+    .account-remark strong {
+      color: #4a3827;
+      margin-right: 6px;
+    }
     .site-model-groups {
       display: grid;
       grid-template-columns: 1fr;
@@ -593,6 +607,12 @@
         linear-gradient(135deg, #fffdfa 0%, #fff6e6 100%);
       box-shadow: 0 24px 60px rgba(47, 34, 18, 0.2);
       animation: toastIn .22s ease;
+    }
+    .account-modal-card {
+      max-height: calc(100dvh - 32px);
+      overflow-y: auto;
+      overscroll-behavior: contain;
+      scrollbar-gutter: stable;
     }
     .modal-title { margin: 0 0 4px; font-size: 24px; font-family: "Cormorant Garamond", serif; }
     .modal-sub { color: var(--sub); font-size: 12px; margin-bottom: 14px; }
@@ -945,6 +965,10 @@
               <label for="f-session">Session / Bearer Token</label>
               <textarea id="f-session"></textarea>
             </div>
+            <div class="form-group">
+              <label for="f-remark">账号备注（可选）</label>
+              <textarea id="f-remark" maxlength="500" placeholder="仅属于当前账号，不会作为地址备注"></textarea>
+            </div>
             <div class="form-group sub2api-cookie-field">
               <label for="f-stripe-mid">Cookie 字段：__stripe_mid</label>
               <input id="f-stripe-mid" placeholder="只填写 __stripe_mid= 后面的值" />
@@ -973,7 +997,7 @@
   </div>
 
   <div id="add-modal" class="modal-shell" aria-hidden="true">
-    <div class="modal-card">
+    <div class="modal-card account-modal-card">
       <h3 class="modal-title">添加账号</h3>
       <div class="modal-grid">
         <div class="auth-box">
@@ -1011,6 +1035,10 @@
         <div class="form-group span-2">
           <label for="m-session">Session / Bearer Token</label>
           <textarea id="m-session"></textarea>
+        </div>
+        <div class="form-group span-2">
+          <label for="m-remark">账号备注（可选）</label>
+          <textarea id="m-remark" maxlength="500" placeholder="仅属于当前账号，不会作为地址备注"></textarea>
         </div>
         <div class="form-group sub2api-cookie-field">
           <label for="m-stripe-mid">Cookie 字段：__stripe_mid</label>
@@ -1113,6 +1141,7 @@ const el = {
   fProviderList: document.getElementById('f-provider-list'),
   fUser: document.getElementById('f-user'),
   fSession: document.getElementById('f-session'),
+  fRemark: document.getElementById('f-remark'),
   fCookie: document.getElementById('f-cookie'),
   fStripeMid: document.getElementById('f-stripe-mid'),
   fStripeSid: document.getElementById('f-stripe-sid'),
@@ -1128,6 +1157,7 @@ const el = {
   mProviderList: document.getElementById('m-provider-list'),
   mUser: document.getElementById('m-user'),
   mSession: document.getElementById('m-session'),
+  mRemark: document.getElementById('m-remark'),
   mCookie: document.getElementById('m-cookie'),
   mStripeMid: document.getElementById('m-stripe-mid'),
   mStripeSid: document.getElementById('m-stripe-sid'),
@@ -1444,7 +1474,7 @@ function bindProviderCombo(node) {
 }
 
 function setEditFormDisabled(disabled) {
-  for (const node of [el.fName, el.fBaseUrl, el.fProvider, el.fUser, el.fSession, el.fCookie, el.fStripeMid, el.fStripeSid, el.fEnabled]) node.disabled = disabled;
+  for (const node of [el.fName, el.fBaseUrl, el.fProvider, el.fUser, el.fSession, el.fRemark, el.fCookie, el.fStripeMid, el.fStripeSid, el.fEnabled]) node.disabled = disabled;
   const saveBtn = document.getElementById('btn-save');
   const cancelBtn = document.getElementById('btn-cancel');
   const deleteBtn = document.getElementById('btn-delete');
@@ -1461,12 +1491,13 @@ function resetModalForm() {
   el.mProvider.value = 'new-api';
   el.mUser.value = '';
   el.mSession.value = '';
+  el.mRemark.value = '';
   el.mCookie.value = '';
   el.mStripeMid.value = '';
   el.mStripeSid.value = '';
   el.mEnabled.checked = true;
   el.modalError.textContent = '';
-  clearFieldStates([el.mName, el.mBaseUrl, el.mUser, el.mSession, el.mCookie, el.mStripeMid, el.mStripeSid]);
+  clearFieldStates([el.mName, el.mBaseUrl, el.mUser, el.mSession, el.mRemark, el.mCookie, el.mStripeMid, el.mStripeSid]);
   updateProviderHints('modal');
 }
 
@@ -1499,6 +1530,7 @@ function buildPayloadFromInputs(fields) {
     provider: normalizeProvider(fields.provider.value),
     new_api_user: fields.user.value.trim(),
     session: fields.session.value.trim().replace(/^Bearer\s+/i, ''),
+    remark: fields.remark.value.trim(),
     cookie: fields.cookie.value.trim(),
     enabled: !!fields.enabled.checked,
   };
@@ -1506,13 +1538,14 @@ function buildPayloadFromInputs(fields) {
 
 function validatePayload(payload, fields) {
   const errors = [];
-  clearFieldStates([fields.name, fields.baseUrl, fields.user, fields.session, fields.cookie]);
+  clearFieldStates([fields.name, fields.baseUrl, fields.user, fields.session, fields.remark, fields.cookie]);
   if (!payload.name) { errors.push('账号名不能为空'); setFieldInvalid(fields.name, true); }
   if (payload.provider === 'new-api' && payload.new_api_user && !/^\d+$/.test(payload.new_api_user)) { errors.push('new_api_user 只能是数字'); setFieldInvalid(fields.user, true); }
   if (!payload.base_url) { errors.push('域名地址不能为空'); setFieldInvalid(fields.baseUrl, true); }
   else if (!/^https?:\/\/.+/.test(payload.base_url)) { errors.push('域名地址格式不正确'); setFieldInvalid(fields.baseUrl, true); }
   if (!payload.session) { errors.push('Session 不能为空'); setFieldInvalid(fields.session, true); }
   else if (/\s/.test(payload.session) || payload.session.length < (payload.provider === 'sub2api' ? 30 : 20)) { errors.push('Session / Bearer Token 不能包含空白字符，且长度不能过短'); setFieldInvalid(fields.session, true); }
+  if (payload.remark.length > 500) { errors.push('账号备注不能超过 500 个字符'); setFieldInvalid(fields.remark, true); }
   return errors;
 }
 
@@ -1524,11 +1557,12 @@ function fillForm(acc = null) {
     el.fProvider.value = 'new-api';
     el.fUser.value = '';
     el.fSession.value = '';
+    el.fRemark.value = '';
     el.fCookie.value = '';
     el.fStripeMid.value = '';
     el.fStripeSid.value = '';
     el.fEnabled.checked = true;
-    clearFieldStates([el.fName, el.fBaseUrl, el.fUser, el.fSession, el.fCookie, el.fStripeMid, el.fStripeSid]);
+    clearFieldStates([el.fName, el.fBaseUrl, el.fUser, el.fSession, el.fRemark, el.fCookie, el.fStripeMid, el.fStripeSid]);
     updateProviderHints('edit');
     setEditFormDisabled(true);
     el.panelTitle.textContent = '账号编辑';
@@ -1540,12 +1574,13 @@ function fillForm(acc = null) {
   el.fProvider.value = normalizeProvider(acc.provider || 'new-api');
   el.fUser.value = acc.new_api_user || '';
   el.fSession.value = acc.session || '';
+  el.fRemark.value = acc.remark || '';
   el.fCookie.value = acc.cookie || '';
   const cookieFields = parseCookieFields(acc.cookie || '');
   el.fStripeMid.value = cookieFields.__stripe_mid || '';
   el.fStripeSid.value = cookieFields.__stripe_sid || '';
   el.fEnabled.checked = !!acc.enabled;
-  clearFieldStates([el.fName, el.fBaseUrl, el.fUser, el.fSession, el.fCookie, el.fStripeMid, el.fStripeSid]);
+  clearFieldStates([el.fName, el.fBaseUrl, el.fUser, el.fSession, el.fRemark, el.fCookie, el.fStripeMid, el.fStripeSid]);
   updateProviderHints('edit');
   setEditFormDisabled(false);
   el.panelTitle.textContent = `编辑账号：${acc.name}`;
@@ -2595,6 +2630,7 @@ function renderDetail() {
         <div class="metric-value ${metricTone(yesterdayMoney)}">${formatMoney(yesterdayMoney, sys, true)}</div>
       </div>
     </div>
+    <div class="account-remark" data-focus-account-remark title="点击编辑账号备注"><strong>账号备注：</strong>${escapeHtml(acc.remark || '未填写')}</div>
     <div class="small" style="margin-top:12px;">上次检测时间：${prevTime}${sourceTip}</div>
     ${sr && !sr.session_valid ? `<div class="small bad2" style="margin-top:8px; word-break:break-word;">异常信息：${sr.api_error || '接口返回异常'}<\/div>` : ''}
     <div id="token-panel" class="token-panel"></div>
@@ -2603,6 +2639,11 @@ function renderDetail() {
   if (copyAddressButton) {
     copyAddressButton.addEventListener('click', () => copyText(acc.base_url || '', '地址已复制'));
   }
+  const accountRemark = el.detailStatus.querySelector('[data-focus-account-remark]');
+  if (accountRemark) accountRemark.addEventListener('click', () => {
+    el.fRemark.focus();
+    el.fRemark.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  });
   fitMetricValues();
   flashDetail();
   fillForm(acc);
@@ -2946,9 +2987,9 @@ async function applyTopSort() {
 async function saveForm() {
   if (!state.editingAccountKey) { notify('warn2', '未选择账号', '请先点击左侧账号行，再编辑保存。'); return; }
   const key = state.editingAccountKey;
-  const payload = buildPayloadFromInputs({ name: el.fName, baseUrl: el.fBaseUrl, provider: el.fProvider, user: el.fUser, session: el.fSession, cookie: el.fCookie, stripeMid: el.fStripeMid, stripeSid: el.fStripeSid, enabled: el.fEnabled });
+  const payload = buildPayloadFromInputs({ name: el.fName, baseUrl: el.fBaseUrl, provider: el.fProvider, user: el.fUser, session: el.fSession, remark: el.fRemark, cookie: el.fCookie, stripeMid: el.fStripeMid, stripeSid: el.fStripeSid, enabled: el.fEnabled });
   el.fBaseUrl.value = payload.base_url;
-  const errors = validatePayload(payload, { name: el.fName, baseUrl: el.fBaseUrl, provider: el.fProvider, user: el.fUser, session: el.fSession, cookie: el.fCookie, enabled: el.fEnabled });
+  const errors = validatePayload(payload, { name: el.fName, baseUrl: el.fBaseUrl, provider: el.fProvider, user: el.fUser, session: el.fSession, remark: el.fRemark, cookie: el.fCookie, enabled: el.fEnabled });
   if (errors.length) { log(`保存失败：${errors[0]}`, 'bad2'); notify('bad2', '保存失败', errors[0]); return; }
   await api(`/api/accounts/${encodeURIComponent(key)}`, { method: 'PUT', body: JSON.stringify(payload) });
   log(`已更新账号 #${displayIndexByKey(key)}：${payload.name}`, 'ok');
@@ -3004,20 +3045,21 @@ function fillModalFromAuthAccount(account) {
   el.mProvider.value = normalizeProvider(account.provider || 'new-api');
   el.mUser.value = account.new_api_user || '';
   el.mSession.value = (account.session || '').replace(/^Bearer\s+/i, '');
+  el.mRemark.value = account.remark || '';
   el.mCookie.value = account.cookie || '';
   const cookieFields = parseCookieFields(account.cookie || '');
   el.mStripeMid.value = cookieFields.__stripe_mid || '';
   el.mStripeSid.value = cookieFields.__stripe_sid || '';
   updateProviderHints('modal');
-  clearFieldStates([el.mName, el.mBaseUrl, el.mUser, el.mSession, el.mCookie, el.mStripeMid, el.mStripeSid]);
+  clearFieldStates([el.mName, el.mBaseUrl, el.mUser, el.mSession, el.mRemark, el.mCookie, el.mStripeMid, el.mStripeSid]);
 }
 
 
 
 async function saveNewAccount() {
-  const payload = buildPayloadFromInputs({ name: el.mName, baseUrl: el.mBaseUrl, provider: el.mProvider, user: el.mUser, session: el.mSession, cookie: el.mCookie, stripeMid: el.mStripeMid, stripeSid: el.mStripeSid, enabled: el.mEnabled });
+  const payload = buildPayloadFromInputs({ name: el.mName, baseUrl: el.mBaseUrl, provider: el.mProvider, user: el.mUser, session: el.mSession, remark: el.mRemark, cookie: el.mCookie, stripeMid: el.mStripeMid, stripeSid: el.mStripeSid, enabled: el.mEnabled });
   el.mBaseUrl.value = payload.base_url;
-  const errors = validatePayload(payload, { name: el.mName, baseUrl: el.mBaseUrl, provider: el.mProvider, user: el.mUser, session: el.mSession, cookie: el.mCookie, enabled: el.mEnabled });
+  const errors = validatePayload(payload, { name: el.mName, baseUrl: el.mBaseUrl, provider: el.mProvider, user: el.mUser, session: el.mSession, remark: el.mRemark, cookie: el.mCookie, enabled: el.mEnabled });
   if (errors.length) { el.modalError.textContent = errors[0]; notify('bad2', '创建失败', errors[0]); return; }
   el.modalError.textContent = '';
   const data = await api('/api/accounts', { method: 'POST', body: JSON.stringify(payload) });

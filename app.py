@@ -301,7 +301,6 @@ def validate_account_fields(
 
 def normalize_account(account: dict[str, Any], fallback_base_url: str | None = None) -> dict[str, Any]:
     normalized = dict(account)
-    normalized.pop("remark", None)
     account_base = str(normalized.get("base_url") or "").strip()
     if account_base:
         normalized["base_url"] = normalize_base_url(account_base)
@@ -319,6 +318,7 @@ def normalize_account(account: dict[str, Any], fallback_base_url: str | None = N
     normalized["session"] = str(normalized.get("session") or normalized.get("access_token") or "").strip()
     normalized["cookie"] = str(normalized.get("cookie") or "").strip()
     normalized["api_keys"] = parse_api_keys(normalized.get("api_keys"))
+    normalized["remark"] = str(normalized.get("remark") or "").strip()
     return normalized
 
 
@@ -1996,6 +1996,7 @@ def to_public_account(account: dict[str, Any], signin_status: str = "未签到",
         "new_api_user": str(account.get("new_api_user", "")),
         "session": str(account.get("session", "")),
         "cookie": str(account.get("cookie", "")),
+        "remark": str(account.get("remark") or ""),
         "api_keys": api_keys,
         "api_keys_masked": [mask_api_key(k) for k in api_keys],
         "signin_status": public_signin_status,
@@ -2013,8 +2014,11 @@ def parse_account_payload(data: dict[str, Any], require_name: bool = True) -> di
     new_api_user = str(data.get("new_api_user") or "").strip()
     session_value = str(data.get("session") or "").strip()
     cookie = str(data.get("cookie") or "").strip()
+    remark = str(data.get("remark") or "").strip()
     enabled = bool(data.get("enabled", True))
     api_keys = parse_api_keys(data.get("api_keys"))
+    if len(remark) > 500:
+        raise ValueError("remark must not exceed 500 characters")
 
     validate_account_fields(
         name=name,
@@ -2035,6 +2039,7 @@ def parse_account_payload(data: dict[str, Any], require_name: bool = True) -> di
         "new_api_user": new_api_user,
         "session": session_value,
         "cookie": cookie,
+        "remark": remark,
         "api_keys": api_keys,
     }
 
@@ -2103,9 +2108,11 @@ def merge_imported_account(existing: dict[str, Any], imported: dict[str, Any]) -
     merged = dict(existing)
     preserved_index = int(existing.get("account_index", 0) or 0)
     preserved_enabled = bool(existing.get("enabled", True))
+    preserved_remark = str(existing.get("remark") or "").strip()
     merged.update(imported)
     merged["account_index"] = preserved_index
     merged["enabled"] = preserved_enabled
+    merged["remark"] = preserved_remark
     return normalize_account(merged, fallback_base_url=str(existing.get("base_url") or imported.get("base_url") or ""))
 
 

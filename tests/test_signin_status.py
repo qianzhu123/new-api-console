@@ -373,8 +373,8 @@ def test_detail_address_and_site_detail_interactions():
     assert "data-site-remark" in template
     assert "data-refresh-site-models" in template
     assert "tr.addEventListener('dblclick'" in template
-    assert 'id="f-remark"' not in template
-    assert 'id="m-remark"' not in template
-    assert "new_api_user（可选）" in template
+    assert 'id="f-remark"' in template
+    assert 'id="m-remark"' in template
+    assert '<label for="f-user">用户标识</label>' in template
     assert "copyText(acc.base_url || '', '地址已复制')" in template
     assert "function copyTextFallback(value)" in template
