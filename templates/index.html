@@ -105,6 +105,10 @@
     .tag.run { background: rgba(183,121,31,.14); color: #975a16; }
     .group-row { background: rgba(212,175,55,0.10); cursor: pointer; }
     .group-row:hover { background: rgba(212,175,55,0.16); }
+    .group-row.has-site-color { border-left: 5px solid var(--site-color, var(--accent)); }
+    .account-row.has-site-color { border-left: 4px solid var(--site-color, var(--accent)); }
+    .site-color-dot { display:inline-block; width:10px; height:10px; border-radius:999px; background:var(--site-color, var(--accent)); box-shadow:0 0 0 3px rgba(0,0,0,.06); flex:0 0 auto; }
+    .site-special-chip { display:inline-flex; align-items:center; gap:5px; border-radius:999px; padding:2px 8px; font-size:12px; font-weight:800; color:#fff; background:var(--site-color, var(--accent)); box-shadow:0 2px 8px rgba(68,52,31,.12); }
     .group-cell { padding: 12px 7px; overflow: visible !important; }
     .group-box { display:grid; grid-template-columns:minmax(0, 1fr) var(--action-col); align-items:center; gap:12px; }
     .group-main { display:grid; grid-template-columns: 30px minmax(0, 1fr); gap:8px 10px; align-items:center; min-width:0; }
@@ -390,6 +394,16 @@
       justify-content: flex-end;
     }
     .site-model-tools button { padding: 6px 9px; font-size: 12px; }
+    .site-custom-grid { display:grid; grid-template-columns:minmax(0,1fr) 124px; gap:10px; align-items:end; }
+    .site-color-input-row { display:flex; align-items:center; gap:8px; }
+    .site-color-input-row input[type="color"] { width:46px; height:34px; padding:2px; cursor:pointer; }
+    .site-color-input-row input[type="text"] { min-width:0; }
+    .site-color-preset-row { display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; }
+    .site-color-preset { width:24px; height:24px; padding:0; border-radius:999px; border:2px solid rgba(255,255,255,.88); box-shadow:0 0 0 1px rgba(0,0,0,.13); }
+    .site-color-preset:hover { transform:translateY(-1px) scale(1.04); }
+    .site-special-preview { margin-top:8px; display:flex; gap:7px; flex-wrap:wrap; align-items:center; }
+    .site-submit-actions { display:flex; justify-content:flex-end; gap:8px; margin-top:10px; }
+    .site-submit-button { min-width:128px; padding:9px 16px; font-weight:700; }
     .site-model-panel.collapsed .site-model-groups { display: none; }
     .site-model-panel-summary {
       display: flex;
@@ -1715,6 +1729,11 @@ function siteHasDedicatedCheckin(baseUrl) {
 }
 
 function groupKeyFromUrl(url) { return `base:${url}`; }
+function siteInfoForBaseUrl(baseUrl) { return state.siteInfo[normalizeBaseUrlInput(baseUrl)] || {}; }
+function siteDisplayColor(baseUrl) { return quoteText(siteInfoForBaseUrl(baseUrl).display_color).trim(); }
+function siteSpecialInfo(baseUrl) { return quoteText(siteInfoForBaseUrl(baseUrl).special_info).trim(); }
+function safeSiteStyle(baseUrl) { const color = siteDisplayColor(baseUrl); return color ? `--site-color:${color};` : ''; }
+const SITE_COLOR_PRESETS = ['#d4af37', '#2f855a', '#355c7d', '#6b46c1', '#db2777', '#c2410c', '#0f766e', '#4f46e5', '#6b7280', '#c53030'];
 
 function accountCheckinUnsupported(acc) {
   const baseUrl = normalizeBaseUrlInput(acc?.base_url || state.defaultBaseUrl);
@@ -1788,6 +1807,9 @@ function renderGroupRow(group) {
   const stats = getGroupStats(group.accounts);
   const tr = document.createElement('tr');
   tr.className = 'group-row';
+  const siteColor = siteDisplayColor(group.baseUrl);
+  const specialInfo = siteSpecialInfo(group.baseUrl);
+  if (siteColor) { tr.classList.add('has-site-color'); tr.style.setProperty('--site-color', siteColor); }
   if (state.selectedSite === group.baseUrl) tr.classList.add('selected');
   tr.title = '单击查看地址详情；按住地址行可拖动移动地址分组；双击展开或折叠';
   tr.addEventListener('click', (e) => {
@@ -1807,7 +1829,7 @@ function renderGroupRow(group) {
           <button type="button" class="fold-btn" data-group-action="toggle" data-group-key="${key}" title="${collapsed ? '展开' : '折叠'}">
             <span class="fold-icon ${collapsed ? '' : 'expanded'}" aria-hidden="true"></span>
           </button>
-          <span class="group-url mono">${group.baseUrl}</span>
+          <span class="group-url mono">${siteColor ? '<span class="site-color-dot" aria-hidden="true"></span> ' : ''}${group.baseUrl} ${specialInfo ? `<span class="site-special-chip">${escapeHtml(specialInfo)}</span>` : ''}</span>
           <span class="group-stats">
             <span class="group-stat">账号数 ${group.accounts.length}</span>
             <span class="group-stat">可用数 ${stats.valid}</span>
@@ -1836,6 +1858,9 @@ function renderTable() {
       const key = accountKey(acc);
       const index = state.accounts.findIndex((item) => accountKey(item) === key);
       const tr = document.createElement('tr');
+      tr.className = 'account-row';
+      const rowSiteColor = siteDisplayColor(acc.base_url || state.defaultBaseUrl);
+      if (rowSiteColor) { tr.classList.add('has-site-color'); tr.style.setProperty('--site-color', rowSiteColor); }
       if (state.selected && accountKey(state.selected) === key) tr.classList.add('selected');
       tr.addEventListener('click', () => selectAccount(key));
       attachDragEvents(tr, key);
@@ -1851,7 +1876,7 @@ function renderTable() {
 
       tr.innerHTML = `
         <td class="mono">${index + 1}</td>
-        <td>${acc.name || ''}</td>
+        <td>${escapeHtml(acc.name || '')}</td>
         <td>${running ? '<span class="tag run">处理中</span>' : maskTag(acc.enabled)}</td>
         <td class="mono">${providerDisplay(acc)}${accountUserDisplay(acc) ? ' / ' + accountUserDisplay(acc) : ''}</td>
         <td class="small">${rowSum.checkinText}</td>
@@ -2293,29 +2318,33 @@ async function loadSiteInfo(baseUrl) {
   }
 }
 
-async function saveSiteRemark(baseUrl) {
+async function saveSiteInfo(baseUrl) {
   const normalized = normalizeBaseUrlInput(baseUrl);
-  const textarea = el.detailStatus.querySelector('[data-site-remark]');
-  const remark = String(textarea?.value || '').trim();
-  if (remark.length > 500) {
-    notify('warn2', '备注过长', '地址备注不能超过 500 个字符。');
-    return;
-  }
+  const remarkNode = el.detailStatus.querySelector('[data-site-remark]');
+  const specialNode = el.detailStatus.querySelector('[data-site-special]');
+  const colorNode = el.detailStatus.querySelector('[data-site-color-text]');
+  const remark = String(remarkNode?.value || '').trim();
+  const specialInfo = String(specialNode?.value || '').trim();
+  const displayColor = String(colorNode?.value || '').trim();
+  if (remark.length > 500) { notify('warn2', '备注过长', '地址备注不能超过 500 个字符。'); return; }
+  if (specialInfo.length > 100) { notify('warn2', '特殊信息过长', '特殊信息不能超过 100 个字符。'); return; }
+  if (displayColor && !/^#[0-9a-fA-F]{6}$/.test(displayColor)) { notify('warn2', '颜色格式错误', '颜色必须是 #RRGGBB 格式。'); return; }
   state.siteLoading[normalized] = 'remark';
-  renderDetail();
   try {
     const data = await api('/api/sites/info', {
       method: 'PUT',
-      body: JSON.stringify({ base_url: normalized, remark }),
+      body: JSON.stringify({ base_url: normalized, remark, special_info: specialInfo, display_color: displayColor }),
     });
     state.siteInfo[normalized] = data.site || {};
-    log(`${normalized} 地址备注已保存`, 'ok');
-    notify('ok', '地址备注已保存', normalized);
+    log(`${normalized} 地址信息已保存`, 'ok');
+    notify('ok', '地址信息已保存', normalized);
   } finally {
     delete state.siteLoading[normalized];
+    renderTable();
     renderDetail();
   }
 }
+async function saveSiteRemark(baseUrl) { return saveSiteInfo(baseUrl); }
 
 async function saveAccountRemark() {
   if (!state.selected || !state.editingAccountKey) return;
@@ -2487,6 +2516,9 @@ function renderSiteDetail() {
     : (info.models_loaded ? '未发现匹配的 GPT、Claude 或 Gemini 模型。' : '尚未检测模型。');
   const sub2apiOnly = isSub2apiOnlySite(baseUrl);
   const signText = stats.checkinUnsupported ? '不可签到' : `${stats.signed}/${group.accounts.length}`;
+  const displayColor = quoteText(info.display_color || '').trim();
+  const specialInfo = quoteText(info.special_info || '').trim();
+  el.detailStatus.style.cssText = displayColor ? `--site-color:${displayColor}; border-color:${displayColor};` : '';
   el.detailEmpty.style.display = 'none';
   el.detailContent.style.display = 'block';
   el.accountEditSection.style.display = 'none';
@@ -2495,7 +2527,7 @@ function renderSiteDetail() {
     <div class="hero-title">
       <div>
         <div class="hero-name">地址信息</div>
-        <div class="hero-email">地址分组汇总</div>
+        <div class="hero-email">地址分组汇总${displayColor ? ` · 已应用自定义颜色 ${escapeHtml(displayColor)}` : ''}</div>
       </div>
     </div>
     <div class="hero-address-row" style="margin-bottom:8px;">
@@ -2510,6 +2542,7 @@ function renderSiteDetail() {
       <span class="hero-badge">账号数：${group.accounts.length}</span>
       <span class="hero-badge">可用数：${stats.valid}</span>
       <span class="hero-badge">今日签到：${signText}</span>
+      ${specialInfo ? `<span class="site-special-chip">${escapeHtml(specialInfo)}</span>` : ''}
     </div>
     <div class="metric-grid" style="margin-top:12px;">
       <div class="metric-card">
@@ -2526,11 +2559,32 @@ function renderSiteDetail() {
       </div>
     </div>
     <div class="site-section">
-      <div class="site-section-head">
-        <div class="site-section-title">地址备注</div>
-        <button type="button" data-save-site-remark ${loading ? 'disabled' : ''}>${loading === 'remark' ? '保存中' : '保存备注'}</button>
-      </div>
       <textarea class="site-remark-editor" data-site-remark maxlength="500" placeholder="填写该地址的备注信息">${escapeHtml(info.remark || '')}</textarea>
+      <div class="site-custom-grid" style="margin-top:9px;">
+        <div>
+          <label>特殊信息</label>
+          <input type="text" data-site-special maxlength="100" value="${escapeHtml(info.special_info || '')}" />
+        </div>
+        <div>
+          <label>展示颜色</label>
+          <div class="site-color-input-row">
+            <input type="color" data-site-color-picker value="${escapeHtml(displayColor || '#d4af37')}" />
+            <input type="text" class="mono" data-site-color-text value="${escapeHtml(displayColor)}" />
+          </div>
+        </div>
+      </div>
+      <div class="site-color-preset-row">
+        <button type="button" class="secondary" data-site-clear-color>清除颜色</button>
+        ${SITE_COLOR_PRESETS.map((color) => `<button type="button" class="site-color-preset" data-site-color-preset="${color}" style="background:${color}" title="复用颜色 ${color}"></button>`).join('')}
+      </div>
+      <div class="site-special-preview">
+        <span class="small">预览：</span>
+        ${specialInfo ? `<span class="site-special-chip">${escapeHtml(specialInfo)}</span>` : '<span class="small">未设置特殊信息</span>'}
+        ${displayColor ? `<span class="hero-badge mono"><span class="site-color-dot"></span>${escapeHtml(displayColor)}</span>` : ''}
+      </div>
+      <div class="site-submit-actions">
+        <button type="button" data-save-site-remark class="warn site-submit-button" ${loading === 'remark' ? 'disabled' : ''}>${loading === 'remark' ? '保存中' : '提交修改'}</button>
+      </div>
     </div>
     ${sub2apiOnly ? '' : `<div class="site-section">
       <div class="site-section-head">
@@ -2552,8 +2606,21 @@ function renderSiteDetail() {
       </div>
     </div>`}
   `;
-  const saveRemarkButton = el.detailStatus.querySelector('[data-save-site-remark]');
-  if (saveRemarkButton) saveRemarkButton.addEventListener('click', () => saveSiteRemark(baseUrl).catch((e) => notify('bad2', '备注保存失败', e.message || String(e))));
+  const saveRemarkButtons = el.detailStatus.querySelectorAll('[data-save-site-remark]');
+  for (const saveRemarkButton of saveRemarkButtons) {
+    saveRemarkButton.addEventListener('click', () => saveSiteInfo(baseUrl).catch((e) => notify('bad2', '地址信息保存失败', e.message || String(e))));
+  }
+  const colorPicker = el.detailStatus.querySelector('[data-site-color-picker]');
+  const colorText = el.detailStatus.querySelector('[data-site-color-text]');
+  if (colorPicker && colorText) colorPicker.addEventListener('input', () => { colorText.value = colorPicker.value; el.detailStatus.style.setProperty('--site-color', colorPicker.value); });
+  if (colorText && colorPicker) colorText.addEventListener('input', () => { if (/^#[0-9a-fA-F]{6}$/.test(colorText.value.trim())) { colorPicker.value = colorText.value.trim(); el.detailStatus.style.setProperty('--site-color', colorText.value.trim()); } });
+  const clearColorButton = el.detailStatus.querySelector('[data-site-clear-color]');
+  if (clearColorButton && colorText) clearColorButton.addEventListener('click', () => {
+    colorText.value = '';
+    if (colorPicker) colorPicker.value = '#d4af37';
+    el.detailStatus.style.removeProperty('--site-color');
+  });
+  for (const btn of el.detailStatus.querySelectorAll('[data-site-color-preset]')) btn.addEventListener('click', () => { if (colorText) colorText.value = btn.dataset.siteColorPreset || ''; if (colorPicker && colorText.value) colorPicker.value = colorText.value; el.detailStatus.style.setProperty('--site-color', colorText.value); });
   const refreshModelsButton = el.detailStatus.querySelector('[data-refresh-site-models]');
   if (refreshModelsButton) refreshModelsButton.addEventListener('click', () => refreshSiteModels(baseUrl));
   const modelPanelButton = el.detailStatus.querySelector('[data-model-panel-toggle]');
@@ -2580,11 +2647,13 @@ function renderDetail() {
     return;
   }
   if (!state.selected) {
+    el.detailStatus.style.cssText = '';
     el.detailEmpty.style.display = 'block';
     el.detailContent.style.display = 'none';
     el.accountEditSection.style.display = 'block';
     return;
   }
+  el.detailStatus.style.cssText = safeSiteStyle(state.selected?.base_url || state.defaultBaseUrl);
   el.detailEmpty.style.display = 'none';
   el.detailContent.style.display = 'block';
   el.accountEditSection.style.display = 'block';
@@ -2699,6 +2768,7 @@ async function refreshAccounts() {
   }
   state.defaultBaseUrl = data.default_base_url || state.defaultBaseUrl;
   state.knownBaseUrls = Array.isArray(data.known_base_urls) ? data.known_base_urls : [];
+  if (data.sites_info && typeof data.sites_info === 'object') state.siteInfo = { ...state.siteInfo, ...data.sites_info };
   renderKnownBaseUrls();
   state.signinStatus = {};
   state.statusResults = {};

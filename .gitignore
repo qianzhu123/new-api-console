@@ -10,3 +10,10 @@ data/
 
 # Logs
 *.log
+
+# Build/intermediate artifacts
+build_artifacts/
+qiandao.exe
+qiandao.lnk
+qiandao_launcher.exe
+*.spec

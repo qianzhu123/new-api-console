@@ -850,6 +850,15 @@ def load_site_info() -> dict[str, Any]:
     return data
 
 
+def normalize_site_color(raw: Any) -> str:
+    value = str(raw or "").strip()
+    if not value:
+        return ""
+    if len(value) == 7 and value.startswith("#") and all(ch in "0123456789abcdefABCDEF" for ch in value[1:]):
+        return value.lower()
+    return ""
+
+
 def get_site_info(base_url: str) -> dict[str, Any]:
     normalized_url = normalize_base_url(base_url)
     store = load_site_info()
@@ -860,6 +869,8 @@ def get_site_info(base_url: str) -> dict[str, Any]:
     return {
         "base_url": normalized_url,
         "remark": str(entry.get("remark") or ""),
+        "special_info": str(entry.get("special_info") or ""),
+        "display_color": normalize_site_color(entry.get("display_color")),
         "models": [str(model) for model in models if str(model).strip()] if isinstance(models, list) else [],
         "models_loaded": isinstance(models, list),
         "models_failed": bool(entry.get("models_failed")),
@@ -872,6 +883,8 @@ def update_site_info(
     base_url: str,
     *,
     remark: str | None = None,
+    special_info: str | None = None,
+    display_color: str | None = None,
     models: list[str] | None = None,
     models_failed: bool | None = None,
     models_error: str | None = None,
@@ -890,6 +903,16 @@ def update_site_info(
         if remark is not None:
             entry["remark"] = remark
             entry["remark_updated_at"] = now_ts()
+        if special_info is not None:
+            entry["special_info"] = special_info
+            entry["special_info_updated_at"] = now_ts()
+        if display_color is not None:
+            color = normalize_site_color(display_color)
+            if color:
+                entry["display_color"] = color
+            else:
+                entry.pop("display_color", None)
+            entry["display_color_updated_at"] = now_ts()
         if models is not None:
             entry["models"] = models
             entry["models_failed"] = False
@@ -2681,11 +2704,13 @@ def list_accounts():
     cfg = load_config()
     clear_dedicated_unsupported_signin_status(cfg.get("accounts", []))
     accounts = build_public_accounts(cfg.get("accounts", []))
+    known_base_urls = collect_known_base_urls(cfg)
     return jsonify({
         "ok": True,
         "accounts": accounts,
         "default_base_url": normalize_base_url(str(cfg.get("base_url") or get_base_url())),
-        "known_base_urls": collect_known_base_urls(cfg),
+        "known_base_urls": known_base_urls,
+        "sites_info": {base_url: get_site_info(base_url) for base_url in known_base_urls},
     })
 
 
@@ -3145,11 +3170,17 @@ def site_info():
     payload = request.get_json(force=True)
     base_url = str(payload.get("base_url") or "").strip() if isinstance(payload, dict) else ""
     remark = str(payload.get("remark") or "").strip() if isinstance(payload, dict) else ""
+    special_info = str(payload.get("special_info") or "").strip() if isinstance(payload, dict) else ""
+    display_color = str(payload.get("display_color") or "").strip() if isinstance(payload, dict) else ""
     if not base_url:
         return jsonify({"ok": False, "error": "base_url is required"}), 400
     if len(remark) > 500:
         return jsonify({"ok": False, "error": "remark must not exceed 500 characters"}), 400
-    return jsonify({"ok": True, "site": update_site_info(base_url, remark=remark)})
+    if len(special_info) > 100:
+        return jsonify({"ok": False, "error": "special_info must not exceed 100 characters"}), 400
+    if display_color and not normalize_site_color(display_color):
+        return jsonify({"ok": False, "error": "display_color must be a hex color like #ff8800"}), 400
+    return jsonify({"ok": True, "site": update_site_info(base_url, remark=remark, special_info=special_info, display_color=display_color)})
 
 
 @app.route("/api/sites/models", methods=["POST"])
