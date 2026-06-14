@@ -859,6 +859,26 @@ def normalize_site_color(raw: Any) -> str:
     return ""
 
 
+def normalize_site_checkin_mode(raw: Any) -> str:
+    value = str(raw or "auto").strip().lower()
+    if value in {"enabled", "disabled"}:
+        return value
+    return "auto"
+
+
+def is_site_checkin_manually_disabled(base_url: str) -> bool:
+    return normalize_site_checkin_mode(get_site_info(base_url).get("checkin_mode")) == "disabled"
+
+
+def is_site_checkin_manually_enabled(base_url: str) -> bool:
+    return normalize_site_checkin_mode(get_site_info(base_url).get("checkin_mode")) == "enabled"
+
+
+def mark_site_checkin_disabled(base_url: str) -> dict[str, Any]:
+    """Persist that a site does not support check-in so future runs skip it."""
+    return update_site_info(base_url, checkin_mode="disabled")
+
+
 def get_site_info(base_url: str) -> dict[str, Any]:
     normalized_url = normalize_base_url(base_url)
     store = load_site_info()
@@ -871,6 +891,7 @@ def get_site_info(base_url: str) -> dict[str, Any]:
         "remark": str(entry.get("remark") or ""),
         "special_info": str(entry.get("special_info") or ""),
         "display_color": normalize_site_color(entry.get("display_color")),
+        "checkin_mode": normalize_site_checkin_mode(entry.get("checkin_mode")),
         "models": [str(model) for model in models if str(model).strip()] if isinstance(models, list) else [],
         "models_loaded": isinstance(models, list),
         "models_failed": bool(entry.get("models_failed")),
@@ -885,6 +906,7 @@ def update_site_info(
     remark: str | None = None,
     special_info: str | None = None,
     display_color: str | None = None,
+    checkin_mode: str | None = None,
     models: list[str] | None = None,
     models_failed: bool | None = None,
     models_error: str | None = None,
@@ -913,6 +935,9 @@ def update_site_info(
             else:
                 entry.pop("display_color", None)
             entry["display_color_updated_at"] = now_ts()
+        if checkin_mode is not None:
+            entry["checkin_mode"] = normalize_site_checkin_mode(checkin_mode)
+            entry["checkin_mode_updated_at"] = now_ts()
         if models is not None:
             entry["models"] = models
             entry["models_failed"] = False
@@ -1459,9 +1484,14 @@ def build_yesterday_delta(account_name: str, current_quota: int | float | None) 
 
 
 def cached_checkin_disabled(account_index: int, base_url: str = "") -> bool:
+    normalized_url = normalize_base_url(base_url) if base_url else ""
+    if normalized_url and is_site_checkin_manually_disabled(normalized_url):
+        return True
+    if normalized_url and is_site_checkin_manually_enabled(normalized_url):
+        return False
     if account_index <= 0:
         return False
-    if base_url and is_site_with_dedicated_checkin(base_url):
+    if normalized_url and is_site_with_dedicated_checkin(normalized_url):
         return False
     cached = get_status_cache(str(account_index))
     system_status = cached.get("system_status") if isinstance(cached, dict) else None
@@ -1623,12 +1653,12 @@ def classify_checkin(account: dict[str, Any]) -> dict[str, Any]:
     base_url = normalize_base_url(str(account.get("base_url") or get_base_url()))
     provider = account_provider(account)
 
-    if is_forced_unsupported_checkin_site(base_url):
+    if is_forced_unsupported_checkin_site(base_url) or is_site_checkin_manually_disabled(base_url):
         return {
             "account": name,
             "account_index": account_index,
             "state": "UNSUPPORTED",
-            "message": "该网站不支持签到",
+            "message": "该地址已设置为不可签到",
             "timestamp": now_ts(),
         }
 
@@ -1644,7 +1674,7 @@ def classify_checkin(account: dict[str, Any]) -> dict[str, Any]:
             "timestamp": now_ts(),
         }
 
-    if cached_checkin_disabled(account_index):
+    if cached_checkin_disabled(account_index, base_url):
         return {
             "account": name,
             "account_index": account_index,
@@ -2811,6 +2841,17 @@ def update_account(account_index: int):
     })
 
 
+def cleanup_account_runtime(account: dict[str, Any], account_index: int | str | None = None) -> None:
+    runtime_key = str(account_index if account_index is not None else account.get("account_index") or "")
+    old_name = str(account.get("name") or "")
+    for key in {runtime_key, old_name}:
+        if not key:
+            continue
+        delete_runtime_entry(SIGNIN_PATH, key)
+        delete_runtime_entry(HISTORY_PATH, key)
+        delete_runtime_entry(STATUS_CACHE_PATH, key)
+
+
 @app.route("/api/accounts/<int:account_index>", methods=["DELETE"])
 def delete_account(account_index: int):
     cfg = load_config(normalize_and_persist=False)
@@ -2820,18 +2861,45 @@ def delete_account(account_index: int):
         return jsonify({"ok": False, "error": "account not found"}), 404
 
     removed = accounts.pop(idx)
-    runtime_key = str(account_index)
-    old_name = str(removed.get("name") or "")
-    delete_runtime_entry(SIGNIN_PATH, runtime_key)
-    delete_runtime_entry(HISTORY_PATH, runtime_key)
-    delete_runtime_entry(STATUS_CACHE_PATH, runtime_key)
-    if old_name != runtime_key:
-        delete_runtime_entry(SIGNIN_PATH, old_name)
-        delete_runtime_entry(HISTORY_PATH, old_name)
-        delete_runtime_entry(STATUS_CACHE_PATH, old_name)
+    cleanup_account_runtime(removed, account_index)
     cfg["accounts"] = accounts
     cfg = save_config(cfg)
     return jsonify({"ok": True, "deleted": removed.get("name"), "accounts": build_public_accounts(cfg["accounts"])})
+
+
+@app.route("/api/sites/accounts", methods=["DELETE"])
+def delete_site_accounts():
+    data = request.get_json(silent=True) or {}
+    base_url = normalize_base_url(str(data.get("base_url") or ""))
+    if not base_url:
+        return jsonify({"ok": False, "error": "base_url is required"}), 400
+
+    cfg = load_config(normalize_and_persist=False)
+    accounts = cfg.get("accounts", [])
+    removed: list[dict[str, Any]] = []
+    remaining: list[dict[str, Any]] = []
+    default_base_url = normalize_base_url(str(cfg.get("base_url") or ""))
+    for account in accounts:
+        account_base_url = normalize_base_url(str(account.get("base_url") or default_base_url))
+        if account_base_url == base_url:
+            removed.append(account)
+        else:
+            remaining.append(account)
+
+    if not removed:
+        return jsonify({"ok": False, "error": "site accounts not found"}), 404
+
+    for account in removed:
+        cleanup_account_runtime(account, account.get("account_index"))
+
+    cfg["accounts"] = remaining
+    cfg = save_config(cfg)
+    return jsonify({
+        "ok": True,
+        "deleted": len(removed),
+        "base_url": base_url,
+        "accounts": build_public_accounts(cfg["accounts"]),
+    })
 
 
 @app.route("/api/accounts/<int:account_index>/checkin", methods=["POST"])
@@ -2842,13 +2910,18 @@ def checkin_one(account_index: int):
     idx = get_account_index(accounts, account_index)
     if idx < 0:
         return jsonify({"ok": False, "error": "account not found"}), 404
+    account_base_url = normalize_base_url(str(accounts[idx].get("base_url") or get_base_url()))
+    if is_site_checkin_manually_disabled(account_base_url):
+        result = {"account": accounts[idx].get("name") or "unknown", "account_index": account_index, "state": "UNSUPPORTED", "message": "该地址已手动设置为不可签到，已跳过签到", "timestamp": now_ts()}
+        set_base_url_signin_status_today(accounts, account_base_url, "不可签到")
+        return jsonify({"ok": True, "result": result})
     result = classify_checkin(accounts[idx])
     result["account_index"] = account_index
     runtime_key = str(account_index)
-    account_base_url = normalize_base_url(str(accounts[idx].get("base_url") or get_base_url()))
     if result.get("state") in ("SIGNED_NOW", "ALREADY_SIGNED"):
         set_signin_status_today(runtime_key, "已签到")
-    elif result.get("state") == "UNSUPPORTED" and not is_site_with_dedicated_checkin(account_base_url):
+    elif result.get("state") == "UNSUPPORTED" and not is_site_with_dedicated_checkin(account_base_url) and not is_site_checkin_manually_enabled(account_base_url):
+        mark_site_checkin_disabled(account_base_url)
         set_base_url_signin_status_today(accounts, account_base_url, "不可签到")
     elif result.get("state") == "FAILED":
         set_signin_status_today(runtime_key, "未签到")
@@ -2868,7 +2941,7 @@ def checkin_all():
         account_base_url = normalize_base_url(str(account.get("base_url") or get_base_url()))
         if is_site_with_dedicated_checkin(account_base_url):
             continue
-        if get_signin_status_today(runtime_key) == "不可签到" or cached_checkin_disabled(account_index, account_base_url):
+        if is_site_checkin_manually_disabled(account_base_url) or get_signin_status_today(runtime_key) == "不可签到" or cached_checkin_disabled(account_index, account_base_url):
             unsupported_base_urls.add(account_base_url)
     for base_url in unsupported_base_urls:
         set_base_url_signin_status_today(all_accounts, base_url, "不可签到")
@@ -2900,7 +2973,8 @@ def checkin_all():
         account_base_url = normalize_base_url(str(acc.get("base_url") or get_base_url()))
         if result.get("state") in ("SIGNED_NOW", "ALREADY_SIGNED"):
             set_signin_status_today(runtime_key, "已签到")
-        elif result.get("state") == "UNSUPPORTED" and not is_site_with_dedicated_checkin(account_base_url):
+        elif result.get("state") == "UNSUPPORTED" and not is_site_with_dedicated_checkin(account_base_url) and not is_site_checkin_manually_enabled(account_base_url):
+            mark_site_checkin_disabled(account_base_url)
             set_signin_status_today(runtime_key, "不可签到")
         elif result.get("state") == "FAILED":
             set_signin_status_today(runtime_key, "未签到")
@@ -2937,7 +3011,8 @@ def status_one(account_index: int):
     system_status = fetch_public_status(base_url=account_base_url)
     result = check_status(accounts[idx], system_status=system_status)
     result["account_index"] = account_index
-    if system_status.get("checkin_enabled") is False and not is_site_with_dedicated_checkin(account_base_url):
+    if system_status.get("checkin_enabled") is False and not is_site_with_dedicated_checkin(account_base_url) and not is_site_checkin_manually_enabled(account_base_url):
+        mark_site_checkin_disabled(account_base_url)
         set_base_url_signin_status_today(accounts, account_base_url, "不可签到")
     signin_status = get_signin_status_today(str(account_index))
     if is_site_with_dedicated_checkin(account_base_url) and signin_status == "不可签到":
@@ -2977,7 +3052,8 @@ def status_all():
 
     results = run_batch_parallel(accounts, check_account_status)
     for base_url, system_status in system_status_cache.items():
-        if system_status.get("checkin_enabled") is False and not is_site_with_dedicated_checkin(base_url):
+        if system_status.get("checkin_enabled") is False and not is_site_with_dedicated_checkin(base_url) and not is_site_checkin_manually_enabled(base_url):
+            mark_site_checkin_disabled(base_url)
             set_base_url_signin_status_today(all_accounts, base_url, "不可签到")
     for result in results:
         runtime_key = str(result.get("account_index") or "")
@@ -3172,6 +3248,7 @@ def site_info():
     remark = str(payload.get("remark") or "").strip() if isinstance(payload, dict) else ""
     special_info = str(payload.get("special_info") or "").strip() if isinstance(payload, dict) else ""
     display_color = str(payload.get("display_color") or "").strip() if isinstance(payload, dict) else ""
+    checkin_mode = normalize_site_checkin_mode(payload.get("checkin_mode") if isinstance(payload, dict) else None)
     if not base_url:
         return jsonify({"ok": False, "error": "base_url is required"}), 400
     if len(remark) > 500:
@@ -3180,7 +3257,7 @@ def site_info():
         return jsonify({"ok": False, "error": "special_info must not exceed 100 characters"}), 400
     if display_color and not normalize_site_color(display_color):
         return jsonify({"ok": False, "error": "display_color must be a hex color like #ff8800"}), 400
-    return jsonify({"ok": True, "site": update_site_info(base_url, remark=remark, special_info=special_info, display_color=display_color)})
+    return jsonify({"ok": True, "site": update_site_info(base_url, remark=remark, special_info=special_info, display_color=display_color, checkin_mode=checkin_mode)})
 
 
 @app.route("/api/sites/models", methods=["POST"])

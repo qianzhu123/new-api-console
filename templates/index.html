@@ -22,9 +22,10 @@
       --btn2: #6b7280;
       --accent: #d4af37;
       --shadow: 0 10px 30px rgba(68, 52, 31, 0.08);
-      --action-col: 168px;
+      --action-col: 220px;
     }
     * { box-sizing: border-box; }
+    html, body { height: 100%; }
     body {
       margin: 0;
       font-family: "Noto Sans SC", "Segoe UI", sans-serif;
@@ -33,8 +34,9 @@
         radial-gradient(circle at 5% 5%, rgba(212, 175, 55, 0.14), transparent 40%),
         radial-gradient(circle at 95% 10%, rgba(106, 160, 125, 0.15), transparent 32%),
         linear-gradient(180deg, #fbf8f2 0%, #f7f4ed 100%);
+      overflow: hidden;
     }
-    .wrap { max-width: 1480px; margin: 0 auto; padding: 22px 18px 26px; }
+    .wrap { max-width: 1480px; height: 100vh; margin: 0 auto; padding: 22px 18px 26px; display: flex; flex-direction: column; min-height: 0; }
     .head {
       display: flex;
       justify-content: space-between;
@@ -46,6 +48,7 @@
       border-radius: 14px;
       background: linear-gradient(120deg, #fffdf8 0%, #fef9ef 100%);
       box-shadow: var(--shadow);
+      flex: 0 0 auto;
     }
     h1 {
       margin: 0;
@@ -71,21 +74,26 @@
     button.warn { background: var(--warn); box-shadow: 0 3px 10px rgba(183,121,31,.23); }
     button.bad { background: var(--bad); box-shadow: 0 3px 10px rgba(197,48,48,.22); }
     button:disabled { opacity: 0.55; cursor: not-allowed; transform: none; }
-    .grid { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(480px, .9fr); gap: 12px; align-items: start; }
+    .grid { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(480px, .9fr); gap: 12px; align-items: stretch; flex: 1 1 auto; min-height: 0; }
     .card {
       background: var(--panel);
       border: 1px solid var(--line);
       border-radius: 14px;
       padding: 12px;
       box-shadow: var(--shadow);
+      min-height: 0;
     }
-    table { width: 100%; border-collapse: collapse; font-size: 13px; }
-    .account-table-wrap { width: 100%; overflow-x: hidden; }
+    .list-card { display:flex; flex-direction:column; overflow:hidden; }
+    .detail-card { overflow:auto; }
+    table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 13px; }
+    .account-table-wrap { width: 100%; overflow: auto; flex: 1 1 auto; min-height: 0; }
     .account-table { width: 100%; min-width: 0; table-layout: fixed; }
     .account-table th,
     .account-table td { overflow: hidden; text-overflow: ellipsis; }
     th, td { border-bottom: 1px solid var(--line); padding: 9px 7px; text-align: left; vertical-align: top; }
-    th { color: #503f2c; font-weight: 700; background: rgba(212,175,55,0.08); }
+    th { color: #503f2c; font-weight: 700; background: #fbf4dc; }
+    .account-table thead { position: sticky; top: 0; z-index: 5; }
+    .account-table thead th { position: sticky; top: 0; z-index: 6; box-shadow: 0 1px 0 var(--line), 0 8px 12px rgba(255,253,248,.92); }
     tr:hover { background: rgba(106, 160, 125, 0.08); }
     tr.selected { background: rgba(53, 92, 125, 0.12); }
     tr.dragging { opacity: .55; }
@@ -856,8 +864,12 @@
       word-break: break-word;
     }
     @media (max-width: 980px) {
-      .grid { grid-template-columns: 1fr; }
+      body { overflow: auto; }
+      .wrap { height: auto; min-height: 100vh; }
+      .grid { grid-template-columns: 1fr; overflow: visible; }
       .head { flex-direction: column; align-items: flex-start; }
+      .list-card { max-height: 70vh; }
+      .detail-card { overflow: visible; }
       .modal-grid { grid-template-columns: 1fr; }
     }
     @media (max-width: 1280px) and (min-width: 981px) {
@@ -888,7 +900,7 @@
     </div>
 
     <div class="grid">
-      <div class="card">
+      <div class="card list-card">
         <div class="list-tools">
           <div class="small">地址分组列表</div>
           <div class="sort-tools" aria-label="账号排序">
@@ -928,7 +940,7 @@
         </div>
       </div>
 
-      <div class="card">
+      <div class="card detail-card">
         <h3 id="panel-title" style="margin-top:0;">账号详情</h3>
 
         <div id="detail-empty" class="small">点击左侧账号查看详情。</div>
@@ -1732,12 +1744,40 @@ function groupKeyFromUrl(url) { return `base:${url}`; }
 function siteInfoForBaseUrl(baseUrl) { return state.siteInfo[normalizeBaseUrlInput(baseUrl)] || {}; }
 function siteDisplayColor(baseUrl) { return quoteText(siteInfoForBaseUrl(baseUrl).display_color).trim(); }
 function siteSpecialInfo(baseUrl) { return quoteText(siteInfoForBaseUrl(baseUrl).special_info).trim(); }
+function siteCheckinMode(baseUrl) {
+  const mode = String(siteInfoForBaseUrl(baseUrl).checkin_mode || 'auto').toLowerCase();
+  return ['auto', 'enabled', 'disabled'].includes(mode) ? mode : 'auto';
+}
+function siteCheckinDisabled(baseUrl) { return siteCheckinMode(baseUrl) === 'disabled'; }
+function updateSiteCheckinModeCache(baseUrl, mode) {
+  const normalized = normalizeBaseUrlInput(baseUrl);
+  if (!normalized) return;
+  const nextMode = ['auto', 'enabled', 'disabled'].includes(mode) ? mode : 'auto';
+  state.siteInfo[normalized] = { ...(state.siteInfo[normalized] || {}), checkin_mode: nextMode };
+}
+function markSiteAccountsCheckinUnsupported(baseUrl) {
+  const normalized = normalizeBaseUrlInput(baseUrl);
+  if (!normalized) return;
+  for (const item of state.accounts) {
+    if (normalizeBaseUrlInput(item.base_url || state.defaultBaseUrl) === normalized) state.signinStatus[accountKey(item)] = '不可签到';
+  }
+}
+function clearSiteAccountsUnsupportedIfManualEnabled(baseUrl) {
+  const normalized = normalizeBaseUrlInput(baseUrl);
+  if (!normalized) return;
+  for (const item of state.accounts) {
+    if (normalizeBaseUrlInput(item.base_url || state.defaultBaseUrl) !== normalized) continue;
+    const key = accountKey(item);
+    if (state.signinStatus[key] === '不可签到') state.signinStatus[key] = '未签到';
+  }
+}
 function safeSiteStyle(baseUrl) { const color = siteDisplayColor(baseUrl); return color ? `--site-color:${color};` : ''; }
 const SITE_COLOR_PRESETS = ['#d4af37', '#2f855a', '#355c7d', '#6b46c1', '#db2777', '#c2410c', '#0f766e', '#4f46e5', '#6b7280', '#c53030'];
 
 function accountCheckinUnsupported(acc) {
   const baseUrl = normalizeBaseUrlInput(acc?.base_url || state.defaultBaseUrl);
-  if (isForcedUnsupportedCheckinSite(baseUrl)) return true;
+  if (isForcedUnsupportedCheckinSite(baseUrl) || siteCheckinDisabled(baseUrl)) return true;
+  if (siteCheckinMode(baseUrl) === 'enabled') return false;
   if (siteHasDedicatedCheckin(baseUrl) || normalizeProvider(acc?.provider) === 'custom') return false;
   const key = accountKey(acc);
   if ((state.signinStatus[key] || acc.signin_status) === '不可签到') return true;
@@ -1754,13 +1794,13 @@ function markAccountSiteCheckinUnsupported(key) {
   const account = findAccountByKey(key);
   if (!account) return;
   const baseUrl = normalizeBaseUrlInput(account.base_url || state.defaultBaseUrl);
-  if (isForcedUnsupportedCheckinSite(baseUrl)) {
-    for (const item of state.accounts) {
-      if (normalizeBaseUrlInput(item.base_url || state.defaultBaseUrl) === baseUrl) state.signinStatus[accountKey(item)] = '不可签到';
-    }
+  if (isForcedUnsupportedCheckinSite(baseUrl) || siteCheckinDisabled(baseUrl)) {
+    markSiteAccountsCheckinUnsupported(baseUrl);
     return;
   }
+  if (siteCheckinMode(baseUrl) === 'enabled') return;
   if (siteHasDedicatedCheckin(baseUrl) || normalizeProvider(account.provider) === 'custom') return;
+  updateSiteCheckinModeCache(baseUrl, 'disabled');
   for (const item of state.accounts) {
     if (normalizeBaseUrlInput(item.base_url || state.defaultBaseUrl) !== baseUrl) continue;
     state.signinStatus[accountKey(item)] = '不可签到';
@@ -1840,6 +1880,7 @@ function renderGroupRow(group) {
         <div class="group-actions">
           <button type="button" data-group-action="checkin" data-group-key="${key}" ${stats.checkinUnsupported ? 'disabled title="该网站不支持签到"' : ''}>${stats.checkinUnsupported ? '不可签到' : '全部签到'}</button>
           <button type="button" class="secondary" data-group-action="status" data-group-key="${key}">全部检测</button>
+          <button type="button" class="bad" data-group-action="delete" data-group-key="${key}">删除</button>
         </div>
       </div>
     </td>`;
@@ -1922,6 +1963,10 @@ function renderTable() {
       }
       if (action === 'status') {
         await runGroupStatus(group);
+        return;
+      }
+      if (action === 'delete') {
+        await deleteSiteGroup(group);
         return;
       }
     });
@@ -2323,9 +2368,11 @@ async function saveSiteInfo(baseUrl) {
   const remarkNode = el.detailStatus.querySelector('[data-site-remark]');
   const specialNode = el.detailStatus.querySelector('[data-site-special]');
   const colorNode = el.detailStatus.querySelector('[data-site-color-text]');
+  const checkinModeNode = el.detailStatus.querySelector('[data-site-checkin-mode]');
   const remark = String(remarkNode?.value || '').trim();
   const specialInfo = String(specialNode?.value || '').trim();
   const displayColor = String(colorNode?.value || '').trim();
+  const checkinMode = ['auto', 'enabled', 'disabled'].includes(String(checkinModeNode?.value || 'auto')) ? String(checkinModeNode?.value || 'auto') : 'auto';
   if (remark.length > 500) { notify('warn2', '备注过长', '地址备注不能超过 500 个字符。'); return; }
   if (specialInfo.length > 100) { notify('warn2', '特殊信息过长', '特殊信息不能超过 100 个字符。'); return; }
   if (displayColor && !/^#[0-9a-fA-F]{6}$/.test(displayColor)) { notify('warn2', '颜色格式错误', '颜色必须是 #RRGGBB 格式。'); return; }
@@ -2333,9 +2380,11 @@ async function saveSiteInfo(baseUrl) {
   try {
     const data = await api('/api/sites/info', {
       method: 'PUT',
-      body: JSON.stringify({ base_url: normalized, remark, special_info: specialInfo, display_color: displayColor }),
+      body: JSON.stringify({ base_url: normalized, remark, special_info: specialInfo, display_color: displayColor, checkin_mode: checkinMode }),
     });
     state.siteInfo[normalized] = data.site || {};
+    if ((data.site || {}).checkin_mode === 'disabled') markSiteAccountsCheckinUnsupported(normalized);
+    if ((data.site || {}).checkin_mode === 'enabled') clearSiteAccountsUnsupportedIfManualEnabled(normalized);
     log(`${normalized} 地址信息已保存`, 'ok');
     notify('ok', '地址信息已保存', normalized);
   } finally {
@@ -2518,6 +2567,7 @@ function renderSiteDetail() {
   const signText = stats.checkinUnsupported ? '不可签到' : `${stats.signed}/${group.accounts.length}`;
   const displayColor = quoteText(info.display_color || '').trim();
   const specialInfo = quoteText(info.special_info || '').trim();
+  const checkinMode = siteCheckinMode(baseUrl);
   el.detailStatus.style.cssText = displayColor ? `--site-color:${displayColor}; border-color:${displayColor};` : '';
   el.detailEmpty.style.display = 'none';
   el.detailContent.style.display = 'block';
@@ -2572,6 +2622,17 @@ function renderSiteDetail() {
             <input type="text" class="mono" data-site-color-text value="${escapeHtml(displayColor)}" />
           </div>
         </div>
+      </div>
+      <div class="site-custom-grid" style="margin-top:9px;">
+        <div>
+          <label>签到设置</label>
+          <select data-site-checkin-mode>
+            <option value="auto" ${checkinMode === 'auto' ? 'selected' : ''}>自动检测</option>
+            <option value="enabled" ${checkinMode === 'enabled' ? 'selected' : ''}>可以签到</option>
+            <option value="disabled" ${checkinMode === 'disabled' ? 'selected' : ''}>不签到</option>
+          </select>
+        </div>
+        <div class="small" style="align-self:center;">选择“不签到”后，该地址和下属账号会显示不可签到，并在签到时自动跳过。</div>
       </div>
       <div class="site-color-preset-row">
         <button type="button" class="secondary" data-site-clear-color>清除颜色</button>
@@ -3155,6 +3216,43 @@ async function saveNewAccount() {
   if (key) selectAccount(key);
 }
 
+async function deleteSiteGroup(group) {
+  const baseUrl = normalizeBaseUrlInput(group?.baseUrl || '');
+  if (!baseUrl) return;
+  const count = group.accounts.length;
+  const confirmed = await showConfirmDialog({
+    title: '删除',
+    message: `确定删除 ${baseUrl} 吗？该地址下的 ${count} 个账号会一起删除。`,
+    okText: '删除',
+  });
+  if (!confirmed) return;
+  const deletedKeys = group.accounts.map(accountKey);
+  const data = await api('/api/sites/accounts', {
+    method: 'DELETE',
+    body: JSON.stringify({ base_url: baseUrl }),
+  });
+  for (const key of deletedKeys) {
+    delete state.checkinResults[key];
+    delete state.statusResults[key];
+    delete state.signinStatus[key];
+    delete state.pendingAccounts[key];
+    delete state.tokens[key];
+    delete state.tokenGroups[key];
+    delete state.selectedTokenGroup[key];
+    delete state.tokenLoading[key];
+    delete state.tokenRevealing[key];
+  }
+  delete state.collapsedGroups[groupKeyFromUrl(baseUrl)];
+  if (state.selectedSite === baseUrl) state.selectedSite = null;
+  if (state.selected && deletedKeys.includes(accountKey(state.selected))) {
+    state.selected = null;
+    fillForm(null);
+  }
+  log(`已删除：${baseUrl}，共 ${data.deleted || count} 个账号`, 'ok');
+  notify('ok', '已删除', `${baseUrl} 及其下属账号已删除。`);
+  await refreshAccounts();
+}
+
 async function deleteOne(key) {
   const label = accountLabel(key);
   const confirmed = await showConfirmDialog({
@@ -3306,3 +3404,4 @@ refreshAccounts()
 </script>
 </body>
 </html>
+

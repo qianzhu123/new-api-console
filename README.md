@@ -8,7 +8,9 @@ A local Flask web console for multi-account new-api management.
 - Optional per-account remarks, editable from the account form and shown in account details
 - Per-account domain (`base_url`) configuration (required when adding/editing)
 - `new_api_user` is optional when adding or editing an account; when provided, it must be numeric.
-- Address-level detail view with aggregate balances, editable remarks, and cached supported-model information
+- Address-level detail view with aggregate balances, editable remarks, special labels, display color, sign-in mode, and cached supported-model information
+- Fixed header/detail layout: the address-account list scrolls independently while top controls and the right detail panel stay visible
+- Address-level delete action that removes the address group and all accounts under it
 - One-click sign-in for one account or all enabled accounts
 - Persisted **today sign-in status** (`已签到 / 失败 / 未知`)
 - Automatic detection of websites that do not support check-in
@@ -100,8 +102,9 @@ run_web.bat
 
 - When you run `签到` / `全部签到`, successful states (`SIGNED_NOW`, `ALREADY_SIGNED`) are saved as `已签到`.
 - Failed states remain `未签到`.
-- If the website reports that check-in is disabled or unsupported, or the check-in endpoint returns HTTP 404/405, the status is saved as `不可签到`.
-- Once one account confirms that its website cannot check in, that website group's check-in buttons are disabled and the group summary displays `不可签到`.
+- If the website reports that check-in is disabled or unsupported, or the check-in endpoint returns HTTP 404/405, automatic mode saves the status as `不可签到`.
+- Address detail has a sign-in mode selector: `自动检测` follows detection results, `可以签到` keeps the address eligible, and `不签到` skips the address and all accounts under it.
+- Once one account confirms that its website cannot check in in automatic mode, that website group's check-in buttons are disabled and the group summary displays `不可签到`.
 - `全部签到` only sends requests for enabled accounts whose current daily status is `未签到`; accounts marked `已签到` or `不可签到` are skipped.
 - Store file: `data/signin_status.json`.
 
@@ -132,9 +135,9 @@ run_web.bat
 
 ### 5) Address details and model cache
 
-- Single-click an address group to show its account count, available count, sign-in summary, aggregate balance metrics, address remark, and supported models.
+- Single-click an address group to show its account count, available count, sign-in summary, aggregate balance metrics, address remark, special label, display color, sign-in mode, and supported models.
 - Double-click an address group to expand or collapse it.
-- Address remarks and model results are stored in `data/site_info.json`.
+- Address remarks, special labels, display colors, sign-in mode, and model results are stored in `data/site_info.json`.
 - Account remarks belong to individual accounts and are stored in `data/session.json`; importing JSON over an existing account preserves its current remark.
 - Model detection calls `/api/user/models` using the first account under that address.
 - Only model names containing `gpt-image-2`, `gpt`, `claude`, or `gemini` are displayed.
@@ -143,6 +146,8 @@ run_web.bat
 
 - `全部签到`: sign in all enabled accounts and persist today sign-in state.
 - `全部检测`: check all enabled accounts and update balance delta.
+- Address action `删除`: delete the address group and all accounts under it after confirmation.
+- Address detail `提交修改`: save address remarks, special info, display color, and sign-in mode together.
 - Row action `检测`: run single-account check.
 - `添加令牌`: create a token after token groups are loaded.
 - `刷新令牌`: force-refresh token groups and token metadata from the remote site.
