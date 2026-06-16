@@ -165,17 +165,18 @@
     .fold-icon.expanded { transform: rotate(45deg); }
     .status-short { white-space: nowrap; }
     .list-tools {
-      display:flex;
+      display:grid;
+      grid-template-columns: auto minmax(0, 1fr);
       align-items:center;
-      justify-content:space-between;
-      gap:10px;
+      gap:16px;
       margin-bottom:10px;
-      flex-wrap:wrap;
+      min-width:0;
     }
-    .sort-tools { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
-    .account-filter { min-width: 220px; max-width: 300px; height: 34px; padding: 6px 10px; }
-    .sort-tools select { width: 150px; height: 34px; padding: 6px 8px; }
-    .sort-tools button { padding: 7px 10px; }
+    .list-tools .small { white-space:nowrap; }
+    .sort-tools { display:flex; align-items:center; justify-content:flex-end; gap:8px; flex-wrap:nowrap; min-width:0; width:100%; }
+    .account-filter { flex:1 1 300px; min-width: 220px; max-width: 360px; height: 40px; padding: 8px 10px; }
+    .sort-tools select { flex:0 0 160px; width: 160px; height: 40px; padding: 8px 8px; }
+    .sort-tools button { flex:0 0 auto; padding: 8px 12px; height: 40px; }
     .sort-tools button.active { outline: 2px solid rgba(212,175,55,.5); box-shadow: 0 0 0 3px rgba(212,175,55,.16), 0 3px 10px rgba(183,121,31,.23); }
     .drag-scroll-hint { box-shadow: inset 0 16px 18px -18px rgba(53,92,125,.55), inset 0 -16px 18px -18px rgba(53,92,125,.55); }
     .form-group { margin-bottom: 9px; }
@@ -919,8 +920,8 @@
       <div class="card list-card">
         <div class="list-tools">
           <div class="small">地址分组列表</div>
-          <div class="sort-tools" aria-label="账号排序和搜索">
-            <input id="account-filter" class="account-filter" type="search" placeholder="搜索账户/地址/用户" autocomplete="off" />
+          <div class="sort-tools" aria-label="地址筛选排序">
+            <input id="account-filter" class="account-filter" type="search" placeholder="搜索地址" autocomplete="off" />
             <select id="sort-field" title="排序字段">
               <option value="group">分组排序</option>
               <option value="quota">额度排序</option>
@@ -1869,15 +1870,7 @@ function getGroupByBaseUrl(baseUrl) {
 function accountMatchesFilter(acc, baseUrl) {
   const needle = quoteText(state.accountFilter).trim().toLowerCase();
   if (!needle) return true;
-  return [
-    acc.name,
-    acc.base_url,
-    baseUrl,
-    acc.provider,
-    acc.user,
-    acc.remark,
-    acc.account_index,
-  ].some((value) => quoteText(value).toLowerCase().includes(needle));
+  return quoteText(baseUrl || acc.base_url || '').toLowerCase().includes(needle);
 }
 
 function isSub2apiOnlySite(baseUrl) {
@@ -1913,7 +1906,7 @@ function sitePinned(baseUrl) { return !!siteInfoForBaseUrl(baseUrl).pinned; }
 function pinIconHtml() { return '<span class="pin-icon" aria-hidden="true"><span></span></span>'; }
 function pinMark(pinned, title = '已置顶') { return pinned ? `<span class="pin-mark" title="${escapeHtml(title)}">${pinIconHtml()}</span>` : ''; }
 function manualSigninText(acc) { return acc?.manual_signin_required ? (quoteText(acc.manual_signin_reason).trim() || '签到异常，需要手动签到') : ''; }
-function groupPinned(group) { return sitePinned(group.baseUrl) || group.accounts.some((acc) => !!acc.pinned); }
+function groupPinned(group) { return sitePinned(group.baseUrl); }
 function siteCheckinMode(baseUrl) {
   const mode = String(siteInfoForBaseUrl(baseUrl).checkin_mode || 'auto').toLowerCase();
   return ['auto', 'enabled', 'disabled'].includes(mode) ? mode : 'auto';
@@ -2041,7 +2034,7 @@ function renderGroupRow(group) {
           <button type="button" class="fold-btn" data-group-action="toggle" data-group-key="${key}" title="${collapsed ? '展开' : '折叠'}">
             <span class="fold-icon ${collapsed ? '' : 'expanded'}" aria-hidden="true"></span>
           </button>
-          <span class="group-url mono">${pinMark(pinned, '该地址/账号已置顶')}${siteColor ? '<span class="site-color-dot" aria-hidden="true"></span> ' : ''}${group.baseUrl} ${specialInfo ? `<span class="site-special-chip">${escapeHtml(specialInfo)}</span>` : ''}</span>
+          <span class="group-url mono">${pinMark(pinned, '该地址已置顶')}${siteColor ? '<span class="site-color-dot" aria-hidden="true"></span> ' : ''}${group.baseUrl} ${specialInfo ? `<span class="site-special-chip">${escapeHtml(specialInfo)}</span>` : ''}</span>
           <span class="group-stats">
             <span class="group-stat">账号数 ${group.accounts.length}</span>
             <span class="group-stat">可用数 ${stats.valid}</span>
@@ -2070,7 +2063,7 @@ function renderTable() {
     el.body.appendChild(renderGroupRow(visibleGroup));
     if (state.collapsedGroups[groupKey]) continue;
 
-    [...visibleAccounts].sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0)).forEach((acc) => {
+    visibleAccounts.forEach((acc) => {
       const key = accountKey(acc);
       const index = state.accounts.findIndex((item) => accountKey(item) === key);
       const tr = document.createElement('tr');
@@ -2094,14 +2087,13 @@ function renderTable() {
 
       tr.innerHTML = `
         <td class="mono">${index + 1}</td>
-        <td>${pinMark(acc.pinned, '账号已置顶')}${escapeHtml(acc.name || '')}${manualText ? ` <span class="manual-signin-chip" title="${escapeHtml(manualText)}">手动</span>` : ''}</td>
+        <td>${escapeHtml(acc.name || '')}${manualText ? ` <span class="manual-signin-chip" title="${escapeHtml(manualText)}">手动</span>` : ''}</td>
         <td>${running ? '<span class="tag run">处理中</span>' : maskTag(acc.enabled)}</td>
         <td class="mono">${providerDisplay(acc)}${accountUserDisplay(acc) ? ' / ' + accountUserDisplay(acc) : ''}</td>
         <td class="small">${rowSum.checkinText}</td>
         <td class="small status-short" title="${(state.statusResults[key]?.api_error || '').replace(/"/g, '&quot;')}">${rowSum.statusText}</td>
         <td>
           <div class="row-actions">
-            <button data-action="pin" data-key="${key}" class="pin-button ${acc.pinned ? 'active' : 'secondary'}" ${running ? 'disabled' : ''} title="${acc.pinned ? '取消账号置顶' : '置顶该账号'}">${pinIconHtml()}</button>
             <button data-action="checkin" data-key="${key}" class="${activeAction === 'checkin' ? 'busy-button' : ''}" ${(running || checkinDisabled) ? 'disabled' : ''} ${checkinDisabled ? 'title="该网站不支持签到"' : ''}>${checkinLabel}</button>
             <button data-action="status" data-key="${key}" class="secondary ${activeAction === 'status' ? 'busy-button' : ''}" ${running ? 'disabled' : ''}>${statusLabel}</button>
             <button data-action="delete" data-key="${key}" class="bad ${activeAction === 'delete' ? 'busy-button' : ''}" ${running ? 'disabled' : ''}>${deleteLabel}</button>
@@ -2117,7 +2109,6 @@ function renderTable() {
       e.stopPropagation();
       const action = btn.dataset.action;
       const key = btn.dataset.key;
-      if (action === 'pin') await toggleAccountPinned(key);
       if (action === 'checkin') await withAccountBusy(key, 'checkin', () => checkinOne(key));
       if (action === 'status') await withAccountBusy(key, 'status', () => statusOne(key));
       if (action === 'delete') await withAccountBusy(key, 'delete', () => deleteOne(key));
@@ -2936,7 +2927,6 @@ function renderDetail() {
         <span class="hero-badge mono">序号：${displayIndexByKey(key)}</span>
         <span class="hero-badge">状态：${acc.enabled ? '启用' : '停用'}</span>
         <span class="hero-badge">今日签到：${signState}</span>
-        ${acc.pinned ? `<span class="hero-badge">${pinMark(true, '账号已置顶')}账号置顶</span>` : ''}
         ${manualSigninText(acc) ? `<span class="manual-signin-chip" title="${escapeHtml(manualSigninText(acc))}">需要手动签到：${escapeHtml(manualSigninText(acc))}</span>` : ''}
       </div>
       <div class="hero-address-row">
@@ -3331,21 +3321,6 @@ async function applyTopSort(direction = state.sortDir) {
     await refreshAccounts();
   }
 }
-async function toggleAccountPinned(key) {
-  const acc = findAccountByKey(key);
-  if (!acc) return;
-  const pinned = !acc.pinned;
-  await api(`/api/accounts/${encodeURIComponent(key)}`, {
-    method: 'PUT',
-    body: JSON.stringify({ ...acc, pinned })
-  });
-  acc.pinned = pinned;
-  if (state.selected && accountKey(state.selected) === String(key)) state.selected.pinned = pinned;
-  log(`${accountLabel(key)} ${pinned ? '已置顶' : '已取消置顶'}`, 'ok');
-  notify('ok', pinned ? '账号已置顶' : '已取消置顶', `${accountLabel(key)} ${pinned ? '会显示在地址分组顶部' : '恢复普通排序'}。`);
-  await refreshAccounts();
-}
-
 async function toggleSitePinned(baseUrl) {
   const normalized = normalizeBaseUrlInput(baseUrl);
   const info = state.siteInfo[normalized] || {};
