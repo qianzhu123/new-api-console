@@ -12,7 +12,7 @@ A local Flask web console for multi-account new-api management.
 - Fixed header/detail layout: the address-account list scrolls independently while top controls and the right detail panel stay visible
 - Address-level delete action that removes the address group and all accounts under it
 - One-click sign-in for one account or all enabled accounts
-- Persisted **today sign-in status** (`已签到 / 失败 / 未知`)
+- Persisted **today sign-in status** (`已签到 / 未签到 / 不可签到`)
 - Automatic detection of websites that do not support check-in
 - Account check with:
   - current balance
@@ -102,9 +102,9 @@ run_web.bat
 
 - When you run `签到` / `全部签到`, successful states (`SIGNED_NOW`, `ALREADY_SIGNED`) are saved as `已签到`.
 - Failed states remain `未签到`.
-- If the website reports that check-in is disabled or unsupported, or the check-in endpoint returns HTTP 404/405, automatic mode saves the status as `不可签到`.
-- Address detail has a sign-in mode selector: `自动检测` follows detection results, `可以签到` keeps the address eligible, and `不签到` skips the address and all accounts under it.
-- Once one account confirms that its website cannot check in in automatic mode, that website group's check-in buttons are disabled and the group summary displays `不可签到`.
+- If an account's check-in request reports that check-in is disabled or unsupported, or the check-in endpoint returns HTTP 404/405, only that account's daily sign-in status is saved as `不可签到`.
+- Address detail has a sign-in mode selector: `自动检测` keeps account-level detection isolated, `可以签到` keeps the address eligible, and `不签到` manually skips the address and all accounts under it.
+- A website group is treated as `不可签到` only when the address is manually set to `不签到` or every account under that address is already marked `不可签到`.
 - `全部签到` only sends requests for enabled accounts whose current daily status is `未签到`; accounts marked `已签到` or `不可签到` are skipped.
 - Store file: `data/signin_status.json`.
 
@@ -118,7 +118,7 @@ run_web.bat
 - Current balance comes from `/api/user/self`.
 - Status and sign-in requests are sent to each account's own `base_url`.
 - Delta is computed against the **previous stored snapshot**.
-- Latest detection result is also cached locally in `data/status_cache.json`.
+- The last successful detection result is cached locally in `data/status_cache.json`; failed detections do not overwrite it, so the right detail panel can keep showing the last successful balance.
 - If current response has no quota, app falls back to last snapshot and marks it as cached source in UI.
 
 ### 4) Token group and token metadata cache

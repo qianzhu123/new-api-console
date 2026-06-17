@@ -195,8 +195,9 @@ def test_classify_checkin_marks_missing_endpoint_unsupported(monkeypatch):
     assert result["state"] == "UNSUPPORTED"
 
 
-def test_classify_checkin_uses_cached_disabled_capability(tmp_path, monkeypatch):
+def test_classify_checkin_does_not_use_status_cache_to_skip_checkin(tmp_path, monkeypatch):
     monkeypatch.setattr(app, "STATUS_CACHE_PATH", tmp_path / "status_cache.json")
+    monkeypatch.setattr(app, "SITE_INFO_PATH", tmp_path / "site_info.json")
     write_json(
         app.STATUS_CACHE_PATH,
         {
@@ -210,10 +211,13 @@ def test_classify_checkin_uses_cached_disabled_capability(tmp_path, monkeypatch)
         },
     )
 
-    def fail_post(*args, **kwargs):
-        raise AssertionError("disabled website should not call check-in endpoint")
+    calls = []
 
-    monkeypatch.setattr(app.requests, "post", fail_post)
+    def fake_post(*args, **kwargs):
+        calls.append(args)
+        return FakeResponse({"success": True, "message": "ok"})
+
+    monkeypatch.setattr(app.requests, "post", fake_post)
     result = app.classify_checkin(
         {
             "account_index": 7,
@@ -224,10 +228,11 @@ def test_classify_checkin_uses_cached_disabled_capability(tmp_path, monkeypatch)
         }
     )
 
-    assert result["state"] == "UNSUPPORTED"
+    assert calls
+    assert result["state"] == "SIGNED_NOW"
 
 
-def test_checkin_one_marks_all_accounts_on_same_site_unsupported(tmp_path, monkeypatch):
+def test_checkin_one_marks_only_current_account_unsupported(tmp_path, monkeypatch):
     monkeypatch.setattr(app, "CONFIG_PATH", tmp_path / "session.json")
     monkeypatch.setattr(app, "SIGNIN_PATH", tmp_path / "signin_status.json")
     monkeypatch.setattr(app, "STATUS_CACHE_PATH", tmp_path / "status_cache.json")
@@ -266,7 +271,7 @@ def test_checkin_one_marks_all_accounts_on_same_site_unsupported(tmp_path, monke
     assert response.status_code == 200
     assert response.get_json()["result"]["state"] == "UNSUPPORTED"
     assert app.get_signin_status_today("7") == UNSUPPORTED
-    assert app.get_signin_status_today("8") == UNSUPPORTED
+    assert app.get_signin_status_today("8") == UNSIGNED
 
 
 def test_checkin_all_only_requests_unsigned_accounts(tmp_path, monkeypatch):
@@ -339,12 +344,74 @@ def test_checkin_all_only_requests_unsigned_accounts(tmp_path, monkeypatch):
     assert response.status_code == 200
     payload = response.get_json()
     results = payload["results"]
-    assert checked_accounts == [9]
-    assert [result["state"] for result in results] == ["SIGNED_NOW"]
-    assert payload["eligible_count"] == 1
+    assert checked_accounts == [8, 9]
+    assert [result["state"] for result in results] == ["SIGNED_NOW", "SIGNED_NOW"]
+    assert payload["eligible_count"] == 2
     assert payload["skipped_signed"] == 1
-    assert payload["skipped_unsupported"] == 2
-    assert app.get_signin_status_today("8") == UNSUPPORTED
+    assert payload["skipped_unsupported"] == 1
+    assert app.get_signin_status_today("8") == SIGNED
+
+
+def test_status_failure_does_not_overwrite_last_success_or_mark_site(tmp_path, monkeypatch):
+    monkeypatch.setattr(app, "CONFIG_PATH", tmp_path / "session.json")
+    monkeypatch.setattr(app, "SIGNIN_PATH", tmp_path / "signin_status.json")
+    monkeypatch.setattr(app, "STATUS_CACHE_PATH", tmp_path / "status_cache.json")
+    monkeypatch.setattr(app, "SITE_INFO_PATH", tmp_path / "site_info.json")
+    write_json(
+        app.CONFIG_PATH,
+        {
+            "accounts": [
+                {
+                    "account_index": 7,
+                    "name": "first",
+                    "enabled": True,
+                    "base_url": "https://example.test",
+                    "new_api_user": "7",
+                    "session": "session-value-that-is-long-enough",
+                },
+                {
+                    "account_index": 8,
+                    "name": "second",
+                    "enabled": True,
+                    "base_url": "https://example.test",
+                    "new_api_user": "8",
+                    "session": "another-session-value-long-enough",
+                },
+            ]
+        },
+    )
+    last_success = {
+        "account": "first",
+        "account_index": 7,
+        "status_state": "VALID",
+        "session_valid": True,
+        "quota": {"quota": 123},
+        "system_status": {"checkin_enabled": True},
+    }
+    write_json(app.STATUS_CACHE_PATH, {"accounts": {"7": last_success}})
+    monkeypatch.setattr(app, "fetch_public_status", lambda base_url=None: {"ok": True, "checkin_enabled": False})
+    monkeypatch.setattr(
+        app,
+        "check_status",
+        lambda account, system_status=None: {
+            "account": account["name"],
+            "account_index": account["account_index"],
+            "status_state": "API_ERROR",
+            "session_valid": False,
+            "api_error": "boom",
+            "system_status": system_status,
+        },
+    )
+
+    with app.app.test_client() as client:
+        response = client.post("/api/accounts/7/status", json={})
+
+    assert response.status_code == 200
+    assert response.get_json()["result"]["status_state"] == "API_ERROR"
+    assert app.get_status_cache("7") == last_success
+    assert app.get_signin_status_today("7") == UNSIGNED
+    assert app.get_signin_status_today("8") == UNSIGNED
+    assert app.get_site_info("https://example.test")["checkin_mode"] == "auto"
 
 
 def test_frontend_disables_unsupported_group_checkin_and_uses_chevron_icon():
@@ -352,12 +419,14 @@ def test_frontend_disables_unsupported_group_checkin_and_uses_chevron_icon():
 
     assert "function accountCheckinUnsupported" in template
     assert "function isGroupCheckinUnsupported" in template
-    assert "function markAccountSiteCheckinUnsupported" in template
+    assert "function markAccountCheckinUnsupported" in template
     assert "rowSum.checkinText = '不可签到';" in template
     assert "=== '未签到'" in template
     assert "data.skipped_signed" in template
     assert "不可签到" in template
     assert "fold-icon" in template
+    assert "manual-signin-chip" not in template
+    assert "manual_signin_required" not in template
     assert "'▶'" not in template
     assert "'▼'" not in template
 

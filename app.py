@@ -319,6 +319,9 @@ def normalize_account(account: dict[str, Any], fallback_base_url: str | None = N
     normalized["cookie"] = str(normalized.get("cookie") or "").strip()
     normalized["api_keys"] = parse_api_keys(normalized.get("api_keys"))
     normalized["remark"] = str(normalized.get("remark") or "").strip()
+    normalized.pop("manual_signin_required", None)
+    normalized.pop("manual_signin_reason", None)
+    normalized.pop("manual_signin_updated_at", None)
     return normalized
 
 
@@ -524,19 +527,6 @@ def set_signin_status_today(account_name: str, status: str) -> None:
         atomic_save_json(SIGNIN_PATH, store)
 
 
-def set_base_url_signin_status_today(accounts: list[dict[str, Any]], base_url: str, status: str) -> None:
-    normalized_url = normalize_base_url(base_url)
-    if is_site_with_dedicated_checkin(normalized_url) and status == "不可签到":
-        return
-    for account in accounts:
-        account_url = normalize_base_url(str(account.get("base_url") or get_base_url()))
-        if account_url != normalized_url:
-            continue
-        account_index = int(account.get("account_index", 0) or 0)
-        runtime_key = str(account_index) if account_index > 0 else str(account.get("name") or "")
-        set_signin_status_today(runtime_key, status)
-
-
 def clear_signin_status_today(account_name: str) -> None:
     if not account_name:
         return
@@ -621,6 +611,8 @@ def load_status_cache(normalize_and_persist: bool = True) -> dict[str, Any]:
 def set_status_cache(account_name: str, result: dict[str, Any]) -> None:
     if not account_name or not isinstance(result, dict):
         return
+    if not (result.get("status_state") == "VALID" or result.get("session_valid") is True):
+        return
     with config_lock:
         store = load_status_cache(normalize_and_persist=False)
         accounts = store.setdefault("accounts", {})
@@ -639,7 +631,9 @@ def get_status_cache(account_name: str) -> dict[str, Any] | None:
     if not isinstance(accounts, dict):
         return None
     item = accounts.get(account_name)
-    return item if isinstance(item, dict) else None
+    if not isinstance(item, dict):
+        return None
+    return item if item.get("status_state") == "VALID" or item.get("session_valid") is True else None
 
 
 def move_runtime_entry(path: pathlib.Path, old_name: str, new_name: str) -> None:
@@ -874,11 +868,6 @@ def is_site_checkin_manually_enabled(base_url: str) -> bool:
     return normalize_site_checkin_mode(get_site_info(base_url).get("checkin_mode")) == "enabled"
 
 
-def mark_site_checkin_disabled(base_url: str) -> dict[str, Any]:
-    """Persist that a site does not support check-in so future runs skip it."""
-    return update_site_info(base_url, checkin_mode="disabled")
-
-
 def get_site_info(base_url: str) -> dict[str, Any]:
     normalized_url = normalize_base_url(base_url)
     store = load_site_info()
@@ -891,6 +880,7 @@ def get_site_info(base_url: str) -> dict[str, Any]:
         "remark": str(entry.get("remark") or ""),
         "special_info": str(entry.get("special_info") or ""),
         "display_color": normalize_site_color(entry.get("display_color")),
+        "pinned": bool(entry.get("pinned", False)),
         "checkin_mode": normalize_site_checkin_mode(entry.get("checkin_mode")),
         "models": [str(model) for model in models if str(model).strip()] if isinstance(models, list) else [],
         "models_loaded": isinstance(models, list),
@@ -906,6 +896,7 @@ def update_site_info(
     remark: str | None = None,
     special_info: str | None = None,
     display_color: str | None = None,
+    pinned: bool | None = None,
     checkin_mode: str | None = None,
     models: list[str] | None = None,
     models_failed: bool | None = None,
@@ -935,6 +926,9 @@ def update_site_info(
             else:
                 entry.pop("display_color", None)
             entry["display_color_updated_at"] = now_ts()
+        if pinned is not None:
+            entry["pinned"] = bool(pinned)
+            entry["pinned_updated_at"] = now_ts()
         if checkin_mode is not None:
             entry["checkin_mode"] = normalize_site_checkin_mode(checkin_mode)
             entry["checkin_mode_updated_at"] = now_ts()
@@ -1483,21 +1477,6 @@ def build_yesterday_delta(account_name: str, current_quota: int | float | None) 
     }
 
 
-def cached_checkin_disabled(account_index: int, base_url: str = "") -> bool:
-    normalized_url = normalize_base_url(base_url) if base_url else ""
-    if normalized_url and is_site_checkin_manually_disabled(normalized_url):
-        return True
-    if normalized_url and is_site_checkin_manually_enabled(normalized_url):
-        return False
-    if account_index <= 0:
-        return False
-    if normalized_url and is_site_with_dedicated_checkin(normalized_url):
-        return False
-    cached = get_status_cache(str(account_index))
-    system_status = cached.get("system_status") if isinstance(cached, dict) else None
-    return isinstance(system_status, dict) and system_status.get("checkin_enabled") is False
-
-
 def checkin_response_unsupported(status_code: int, text: str) -> bool:
     if status_code in (404, 405):
         return True
@@ -1674,14 +1653,6 @@ def classify_checkin(account: dict[str, Any]) -> dict[str, Any]:
             "timestamp": now_ts(),
         }
 
-    if cached_checkin_disabled(account_index, base_url):
-        return {
-            "account": name,
-            "account_index": account_index,
-            "state": "UNSUPPORTED",
-            "message": "该网站未开启签到功能",
-            "timestamp": now_ts(),
-        }
     if not session_value:
         return {
             "account": name,
@@ -2911,18 +2882,17 @@ def checkin_one(account_index: int):
     if idx < 0:
         return jsonify({"ok": False, "error": "account not found"}), 404
     account_base_url = normalize_base_url(str(accounts[idx].get("base_url") or get_base_url()))
+    runtime_key = str(account_index)
     if is_site_checkin_manually_disabled(account_base_url):
         result = {"account": accounts[idx].get("name") or "unknown", "account_index": account_index, "state": "UNSUPPORTED", "message": "该地址已手动设置为不可签到，已跳过签到", "timestamp": now_ts()}
-        set_base_url_signin_status_today(accounts, account_base_url, "不可签到")
+        set_signin_status_today(runtime_key, "不可签到")
         return jsonify({"ok": True, "result": result})
     result = classify_checkin(accounts[idx])
     result["account_index"] = account_index
-    runtime_key = str(account_index)
     if result.get("state") in ("SIGNED_NOW", "ALREADY_SIGNED"):
         set_signin_status_today(runtime_key, "已签到")
-    elif result.get("state") == "UNSUPPORTED" and not is_site_with_dedicated_checkin(account_base_url) and not is_site_checkin_manually_enabled(account_base_url):
-        mark_site_checkin_disabled(account_base_url)
-        set_base_url_signin_status_today(accounts, account_base_url, "不可签到")
+    elif result.get("state") == "UNSUPPORTED":
+        set_signin_status_today(runtime_key, "不可签到")
     elif result.get("state") == "FAILED":
         set_signin_status_today(runtime_key, "未签到")
     return jsonify({"ok": True, "result": result})
@@ -2934,18 +2904,6 @@ def checkin_all():
     cfg = load_config()
     all_accounts = cfg.get("accounts", [])
     accounts = [a for a in all_accounts if a.get("enabled", True)]
-    unsupported_base_urls: set[str] = set()
-    for account in accounts:
-        account_index = int(account.get("account_index", 0) or 0)
-        runtime_key = str(account_index) if account_index > 0 else str(account.get("name") or "")
-        account_base_url = normalize_base_url(str(account.get("base_url") or get_base_url()))
-        if is_site_with_dedicated_checkin(account_base_url):
-            continue
-        if is_site_checkin_manually_disabled(account_base_url) or get_signin_status_today(runtime_key) == "不可签到" or cached_checkin_disabled(account_index, account_base_url):
-            unsupported_base_urls.add(account_base_url)
-    for base_url in unsupported_base_urls:
-        set_base_url_signin_status_today(all_accounts, base_url, "不可签到")
-
     checkin_accounts: list[dict[str, Any]] = []
     skipped_signed = 0
     skipped_unsupported = 0
@@ -2956,7 +2914,7 @@ def checkin_all():
         signin_status = get_signin_status_today(runtime_key)
         if is_site_with_dedicated_checkin(account_base_url) and signin_status == "不可签到":
             signin_status = "未签到"
-        if not is_site_with_dedicated_checkin(account_base_url) and (account_base_url in unsupported_base_urls or signin_status == "不可签到"):
+        if not is_site_with_dedicated_checkin(account_base_url) and (is_site_checkin_manually_disabled(account_base_url) or signin_status == "不可签到"):
             skipped_unsupported += 1
             continue
         if signin_status != "未签到":
@@ -2973,22 +2931,13 @@ def checkin_all():
         account_base_url = normalize_base_url(str(acc.get("base_url") or get_base_url()))
         if result.get("state") in ("SIGNED_NOW", "ALREADY_SIGNED"):
             set_signin_status_today(runtime_key, "已签到")
-        elif result.get("state") == "UNSUPPORTED" and not is_site_with_dedicated_checkin(account_base_url) and not is_site_checkin_manually_enabled(account_base_url):
-            mark_site_checkin_disabled(account_base_url)
+        elif result.get("state") == "UNSUPPORTED":
             set_signin_status_today(runtime_key, "不可签到")
         elif result.get("state") == "FAILED":
             set_signin_status_today(runtime_key, "未签到")
         return result
 
     results = run_batch_parallel(checkin_accounts, checkin_account)
-    unsupported_urls = unsupported_base_urls | {
-        normalize_base_url(str(account.get("base_url") or get_base_url()))
-        for account, result in zip(checkin_accounts, results)
-        if result.get("state") == "UNSUPPORTED"
-        and not is_site_with_dedicated_checkin(normalize_base_url(str(account.get("base_url") or get_base_url())))
-    }
-    for base_url in unsupported_urls:
-        set_base_url_signin_status_today(all_accounts, base_url, "不可签到")
     return jsonify(
         {
             "ok": True,
@@ -3011,14 +2960,12 @@ def status_one(account_index: int):
     system_status = fetch_public_status(base_url=account_base_url)
     result = check_status(accounts[idx], system_status=system_status)
     result["account_index"] = account_index
-    if system_status.get("checkin_enabled") is False and not is_site_with_dedicated_checkin(account_base_url) and not is_site_checkin_manually_enabled(account_base_url):
-        mark_site_checkin_disabled(account_base_url)
-        set_base_url_signin_status_today(accounts, account_base_url, "不可签到")
     signin_status = get_signin_status_today(str(account_index))
     if is_site_with_dedicated_checkin(account_base_url) and signin_status == "不可签到":
         signin_status = "未签到"
     result["signin_status"] = signin_status
-    set_status_cache(str(account_index), result)
+    if result.get("status_state") == "VALID" or result.get("session_valid") is True:
+        set_status_cache(str(account_index), result)
     return jsonify({"ok": True, "result": result, "system_status": system_status})
 
 
@@ -3047,14 +2994,11 @@ def status_all():
             signin_status = "未签到"
         result["account_index"] = account_index
         result["signin_status"] = signin_status
-        set_status_cache(runtime_key, result)
+        if result.get("status_state") == "VALID" or result.get("session_valid") is True:
+            set_status_cache(runtime_key, result)
         return result
 
     results = run_batch_parallel(accounts, check_account_status)
-    for base_url, system_status in system_status_cache.items():
-        if system_status.get("checkin_enabled") is False and not is_site_with_dedicated_checkin(base_url) and not is_site_checkin_manually_enabled(base_url):
-            mark_site_checkin_disabled(base_url)
-            set_base_url_signin_status_today(all_accounts, base_url, "不可签到")
     for result in results:
         runtime_key = str(result.get("account_index") or "")
         if runtime_key:
@@ -3249,6 +3193,7 @@ def site_info():
     special_info = str(payload.get("special_info") or "").strip() if isinstance(payload, dict) else ""
     display_color = str(payload.get("display_color") or "").strip() if isinstance(payload, dict) else ""
     checkin_mode = normalize_site_checkin_mode(payload.get("checkin_mode") if isinstance(payload, dict) else None)
+    pinned = bool(payload.get("pinned", False)) if isinstance(payload, dict) else False
     if not base_url:
         return jsonify({"ok": False, "error": "base_url is required"}), 400
     if len(remark) > 500:
@@ -3257,7 +3202,7 @@ def site_info():
         return jsonify({"ok": False, "error": "special_info must not exceed 100 characters"}), 400
     if display_color and not normalize_site_color(display_color):
         return jsonify({"ok": False, "error": "display_color must be a hex color like #ff8800"}), 400
-    return jsonify({"ok": True, "site": update_site_info(base_url, remark=remark, special_info=special_info, display_color=display_color, checkin_mode=checkin_mode)})
+    return jsonify({"ok": True, "site": update_site_info(base_url, remark=remark, special_info=special_info, display_color=display_color, pinned=pinned, checkin_mode=checkin_mode)})
 
 
 @app.route("/api/sites/models", methods=["POST"])

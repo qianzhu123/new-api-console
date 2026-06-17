@@ -22,7 +22,7 @@
       --btn2: #6b7280;
       --accent: #d4af37;
       --shadow: 0 10px 30px rgba(68, 52, 31, 0.08);
-      --action-col: 220px;
+      --action-col: 168px;
     }
     * { box-sizing: border-box; }
     html, body { height: 100%; }
@@ -116,25 +116,18 @@
     .group-row.has-site-color { border-left: 5px solid var(--site-color, var(--accent)); }
     .account-row.has-site-color { border-left: 4px solid var(--site-color, var(--accent)); }
     .site-color-dot { display:inline-block; width:10px; height:10px; border-radius:999px; background:var(--site-color, var(--accent)); box-shadow:0 0 0 3px rgba(0,0,0,.06); flex:0 0 auto; }
-    .site-special-chip { display:inline-flex; align-items:center; gap:5px; border-radius:999px; padding:2px 8px; font-size:12px; font-weight:800; color:#fff; background:var(--site-color, var(--accent)); box-shadow:0 2px 8px rgba(68,52,31,.12); }
-    .pin-mark { display:inline-flex; align-items:center; justify-content:center; width:20px; height:20px; margin-right:5px; color:#242332; background:transparent; border:0; box-shadow:none; vertical-align:middle; }
-    .pin-button { min-width:34px !important; width:34px; height:30px; padding:0 !important; font-weight:900; display:inline-flex; align-items:center; justify-content:center; }
-    .pin-button.active { color:#fff; background:#355c7d; box-shadow:0 0 0 3px rgba(53,92,125,.16), 0 3px 10px rgba(53,92,125,.23); }
-    .pin-icon { position:relative; display:inline-block; width:18px; height:18px; color:currentColor; }
-    .pin-icon::before { content:""; position:absolute; left:4px; right:4px; top:3px; height:1px; border-radius:1px; background:currentColor; }
-    .pin-icon::after { content:""; position:absolute; left:50%; top:8px; width:1px; height:8px; border-radius:1px; background:currentColor; transform:translateX(-50%); }
-    .pin-icon > span { position:absolute; left:50%; top:6px; width:9px; height:9px; border-left:1px solid currentColor; border-top:1px solid currentColor; border-radius:1px 0 0 0; transform:translateX(-50%) rotate(45deg); transform-origin:center; }
-    .site-pin-button { margin-left:0; color:#5f4e3b; background:rgba(255,255,255,.78); border-color:rgba(176,139,47,.26); }
-    .site-pin-button.active { color:#355c7d; background:rgba(255,255,255,.78); border-color:rgba(176,139,47,.26); box-shadow:inset 0 0 0 1px rgba(53,92,125,.22); }
-    .manual-signin-chip { display:inline-flex; align-items:center; gap:5px; border-radius:999px; padding:3px 8px; color:#9b2c2c; background:rgba(197,48,48,.13); border:1px solid rgba(197,48,48,.18); font-size:12px; font-weight:800; }
+    .site-special-chip { display:inline-flex; align-items:center; gap:5px; border-radius:999px; padding:2px 8px; font-size:12px; font-weight:700; color:var(--site-color, #715829); background:rgba(255,255,255,.72); border:1px solid color-mix(in srgb, var(--site-color, #d4af37) 36%, #ffffff); box-shadow:none; }
+    .pin-mark { display:inline-flex; align-items:center; justify-content:center; margin-right:6px; border-radius:999px; padding:2px 8px; color:#355c7d; background:rgba(53,92,125,.10); border:1px solid rgba(53,92,125,.18); font-size:12px; font-weight:800; vertical-align:middle; }
+    .site-pin-button { width:auto; height:32px; min-width:58px !important; padding:6px 11px !important; margin-left:0; color:#5f4e3b; background:rgba(255,255,255,.78); border-color:rgba(176,139,47,.26); box-shadow:none; }
+    .site-pin-button.active { color:#fff; background:#355c7d; border-color:#355c7d; box-shadow:0 8px 18px rgba(53,92,125,.18); }
     .group-cell { padding: 12px 7px; overflow: visible !important; }
     .group-box { display:grid; grid-template-columns:minmax(0, 1fr) var(--action-col); align-items:center; gap:12px; }
     .group-main { display:grid; grid-template-columns: 30px minmax(0, 1fr); gap:8px 10px; align-items:center; min-width:0; }
     .group-url { font-weight:700; word-break:break-all; }
     .group-stats { grid-column: 2; display:flex; gap:7px; flex-wrap:wrap; color: var(--sub); font-size: 12px; }
     .group-stat { display:inline-flex; font-weight:600; }
-    .group-actions { display:flex; gap:10px; flex-wrap:nowrap; justify-content:flex-end; flex-shrink:0; }
-    .group-actions button { padding:5px 8px; font-size:12px; }
+    .group-actions { display:flex; gap:6px; flex-wrap:nowrap; justify-content:flex-start; flex-shrink:0; min-width:0; }
+    .group-actions button { padding:5px 4px; font-size:12px; min-width:0; white-space:nowrap; flex:0 0 auto; }
     .fold-btn {
       width: 28px;
       height: 28px;
@@ -1135,6 +1128,7 @@ const state = {
   checkinResults: {},
   signinStatus: {},
   statusResults: {},
+  statusErrors: {},
   systemStatus: null,
   pendingGlobal: false,
   pendingAccounts: {},
@@ -1684,10 +1678,14 @@ function renderRowSummary(key) {
     };
   }
   const s = state.statusResults[key];
+  const error = state.statusErrors[key];
   let checkinText = state.signinStatus[key] || '未签到';
   if (dedicatedCheckin && checkinText === '不可签到') checkinText = '未签到';
   let statusText = '-';
-  if (s) {
+  if (error) {
+    statusText = '异常';
+    console.warn('账号检测异常', error.account || '', error.api_error || '', error);
+  } else if (s) {
     statusText = (s.status_state === 'VALID' || s.session_valid) ? '有效' : '异常';
     if (statusText === '异常') {
       console.warn('账号检测异常', s.account || '', s.api_error || '', s);
@@ -1903,9 +1901,7 @@ function siteInfoForBaseUrl(baseUrl) { return state.siteInfo[normalizeBaseUrlInp
 function siteDisplayColor(baseUrl) { return quoteText(siteInfoForBaseUrl(baseUrl).display_color).trim(); }
 function siteSpecialInfo(baseUrl) { return quoteText(siteInfoForBaseUrl(baseUrl).special_info).trim(); }
 function sitePinned(baseUrl) { return !!siteInfoForBaseUrl(baseUrl).pinned; }
-function pinIconHtml() { return '<span class="pin-icon" aria-hidden="true"><span></span></span>'; }
-function pinMark(pinned, title = '已置顶') { return pinned ? `<span class="pin-mark" title="${escapeHtml(title)}">${pinIconHtml()}</span>` : ''; }
-function manualSigninText(acc) { return acc?.manual_signin_required ? (quoteText(acc.manual_signin_reason).trim() || '签到异常，需要手动签到') : ''; }
+function pinMark(pinned, title = '已置顶') { return pinned ? `<span class="pin-mark" title="${escapeHtml(title)}">置顶</span>` : ''; }
 function groupPinned(group) { return sitePinned(group.baseUrl); }
 function siteCheckinMode(baseUrl) {
   const mode = String(siteInfoForBaseUrl(baseUrl).checkin_mode || 'auto').toLowerCase();
@@ -1945,29 +1941,17 @@ function accountCheckinUnsupported(acc) {
   const key = accountKey(acc);
   if ((state.signinStatus[key] || acc.signin_status) === '不可签到') return true;
   if (state.checkinResults[key]?.state === 'UNSUPPORTED') return true;
-  const status = getAccountStatus(acc);
-  return status?.system_status?.checkin_enabled === false;
+  return false;
 }
 
 function isGroupCheckinUnsupported(accounts) {
-  return accounts.some(accountCheckinUnsupported);
+  return accounts.length > 0 && accounts.every(accountCheckinUnsupported);
 }
 
-function markAccountSiteCheckinUnsupported(key) {
+function markAccountCheckinUnsupported(key) {
   const account = findAccountByKey(key);
   if (!account) return;
-  const baseUrl = normalizeBaseUrlInput(account.base_url || state.defaultBaseUrl);
-  if (isForcedUnsupportedCheckinSite(baseUrl) || siteCheckinDisabled(baseUrl)) {
-    markSiteAccountsCheckinUnsupported(baseUrl);
-    return;
-  }
-  if (siteCheckinMode(baseUrl) === 'enabled') return;
-  if (siteHasDedicatedCheckin(baseUrl) || normalizeProvider(account.provider) === 'custom') return;
-  updateSiteCheckinModeCache(baseUrl, 'disabled');
-  for (const item of state.accounts) {
-    if (normalizeBaseUrlInput(item.base_url || state.defaultBaseUrl) !== baseUrl) continue;
-    state.signinStatus[accountKey(item)] = '不可签到';
-  }
+  state.signinStatus[key] = '不可签到';
 }
 
 function getGroupStats(accounts) {
@@ -2083,15 +2067,14 @@ function renderTable() {
       const checkinLabel = checkinDisabled ? '不可签到' : (activeAction === 'checkin' ? '签到中' : '签到');
       const statusLabel = activeAction === 'status' ? '检测中' : '检测';
       const deleteLabel = activeAction === 'delete' ? '处理中' : '删除';
-      const manualText = manualSigninText(acc);
 
       tr.innerHTML = `
         <td class="mono">${index + 1}</td>
-        <td>${escapeHtml(acc.name || '')}${manualText ? ` <span class="manual-signin-chip" title="${escapeHtml(manualText)}">手动</span>` : ''}</td>
+        <td>${escapeHtml(acc.name || '')}</td>
         <td>${running ? '<span class="tag run">处理中</span>' : maskTag(acc.enabled)}</td>
         <td class="mono">${providerDisplay(acc)}${accountUserDisplay(acc) ? ' / ' + accountUserDisplay(acc) : ''}</td>
         <td class="small">${rowSum.checkinText}</td>
-        <td class="small status-short" title="${(state.statusResults[key]?.api_error || '').replace(/"/g, '&quot;')}">${rowSum.statusText}</td>
+        <td class="small status-short" title="${((state.statusErrors[key] || state.statusResults[key])?.api_error || '').replace(/"/g, '&quot;')}">${rowSum.statusText}</td>
         <td>
           <div class="row-actions">
             <button data-action="checkin" data-key="${key}" class="${activeAction === 'checkin' ? 'busy-button' : ''}" ${(running || checkinDisabled) ? 'disabled' : ''} ${checkinDisabled ? 'title="该网站不支持签到"' : ''}>${checkinLabel}</button>
@@ -2758,9 +2741,7 @@ function renderSiteDetail() {
           <span class="copy-icon" aria-hidden="true"></span>
         </button>
       </span>
-      <button type="button" class="copy-icon-button site-pin-button ${info.pinned ? 'active' : ''}" data-toggle-site-pin title="${info.pinned ? '取消地址置顶' : '置顶该地址'}" aria-label="${info.pinned ? '取消地址置顶' : '置顶该地址'}">
-        ${pinIconHtml()}
-      </button>
+      <button type="button" class="secondary site-pin-button ${info.pinned ? 'active' : ''}" data-toggle-site-pin title="${info.pinned ? '取消地址置顶' : '置顶该地址'}" aria-label="${info.pinned ? '取消地址置顶' : '置顶该地址'}">${info.pinned ? '已置顶' : '置顶'}</button>
     </div>
     <div class="hero-badges">
       <span class="hero-badge">账号数：${group.accounts.length}</span>
@@ -2927,7 +2908,6 @@ function renderDetail() {
         <span class="hero-badge mono">序号：${displayIndexByKey(key)}</span>
         <span class="hero-badge">状态：${acc.enabled ? '启用' : '停用'}</span>
         <span class="hero-badge">今日签到：${signState}</span>
-        ${manualSigninText(acc) ? `<span class="manual-signin-chip" title="${escapeHtml(manualSigninText(acc))}">需要手动签到：${escapeHtml(manualSigninText(acc))}</span>` : ''}
       </div>
       <div class="hero-address-row">
         <span class="hero-badge hero-address-badge mono">
@@ -3014,6 +2994,7 @@ async function refreshAccounts() {
   renderKnownBaseUrls();
   state.signinStatus = {};
   state.statusResults = {};
+  state.statusErrors = {};
   for (const acc of state.accounts) {
     const key = accountKey(acc);
     const signinStatus = acc.signin_status || '未签到';
@@ -3162,10 +3143,10 @@ async function checkinOne(key) {
   notify('warn2', '开始签到', `${label} 正在执行签到。`);
   const data = await api(`/api/accounts/${encodeURIComponent(key)}/checkin`, { method: 'POST', body: '{}' });
   state.checkinResults[key] = data.result;
-  if (data.result.state === 'UNSUPPORTED') { markAccountSiteCheckinUnsupported(key); log(`${label} 所在网站不可签到`, 'warn2'); notify('warn2', '该网站不可签到', `${label}：${data.result.message || '网站未开启签到功能'}`); }
-  else if (data.result.state === 'FAILED') { state.signinStatus[key] = '未签到'; const acc = findAccountByKey(key); if (acc) { acc.manual_signin_required = true; acc.manual_signin_reason = data.result.message || '签到失败，需要手动签到'; } log(`${label} 签到失败：${data.result.message || ''}`, 'bad2'); notify('bad2', '签到失败，已标记手动签到', `${label}：${data.result.message || '未知原因'}`); }
-  else if (data.result.state === 'ALREADY_SIGNED') { state.signinStatus[key] = '已签到'; const acc = findAccountByKey(key); if (acc) { acc.manual_signin_required = false; acc.manual_signin_reason = ''; } log(`${label} 今日已签到`, 'warn2'); notify('warn2', '今日已签到', `${label} 今天已经完成签到。`); }
-  else { state.signinStatus[key] = '已签到'; const acc = findAccountByKey(key); if (acc) { acc.manual_signin_required = false; acc.manual_signin_reason = ''; } log(`${label} 签到成功`, 'ok'); notify('ok', '签到成功', `${label} 已成功签到。`); }
+  if (data.result.state === 'UNSUPPORTED') { markAccountCheckinUnsupported(key); log(`${label} 不可签到`, 'warn2'); notify('warn2', '该账号不可签到', `${label}：${data.result.message || '网站未开启签到功能'}`); }
+  else if (data.result.state === 'FAILED') { state.signinStatus[key] = '未签到'; log(`${label} 签到失败：${data.result.message || ''}`, 'bad2'); notify('bad2', '签到失败', `${label}：${data.result.message || '未知原因'}`); }
+  else if (data.result.state === 'ALREADY_SIGNED') { state.signinStatus[key] = '已签到'; log(`${label} 今日已签到`, 'warn2'); notify('warn2', '今日已签到', `${label} 今天已经完成签到。`); }
+  else { state.signinStatus[key] = '已签到'; log(`${label} 签到成功`, 'ok'); notify('ok', '签到成功', `${label} 已成功签到。`); }
   return data.result;
 }
 
@@ -3173,9 +3154,13 @@ async function statusOne(key) {
   const label = accountLabel(key);
   notify('warn2', '开始检测', `${label} 正在更新余额与状态信息。`);
   const data = await api(`/api/accounts/${encodeURIComponent(key)}/status`, { method: 'POST', body: '{}' });
-  state.statusResults[key] = data.result;
+  if (data.result.session_valid || data.result.status_state === 'VALID') {
+    state.statusResults[key] = data.result;
+    delete state.statusErrors[key];
+  } else {
+    state.statusErrors[key] = data.result;
+  }
   state.signinStatus[key] = data.result.signin_status;
-  if (data.result.signin_status === '不可签到') markAccountSiteCheckinUnsupported(key);
   state.systemStatus = data.system_status || state.systemStatus;
   const r = data.result;
   if (r.session_valid) {
@@ -3196,10 +3181,10 @@ async function checkinAll() {
     const key = String(r.account_index || '');
     const label = accountLabel(key);
     state.checkinResults[key] = r;
-    if (r.state === 'UNSUPPORTED') { markAccountSiteCheckinUnsupported(key); log(`${label} 所在网站不可签到`, 'warn2'); unsupportedCount += 1; }
-    else if (r.state === 'FAILED') { state.signinStatus[key] = '未签到'; const acc = findAccountByKey(key); if (acc) { acc.manual_signin_required = true; acc.manual_signin_reason = r.message || '签到失败，需要手动签到'; } log(`${label} 签到失败：${r.message || ''}`, 'bad2'); unsignedCount += 1; }
-    else if (r.state === 'ALREADY_SIGNED') { state.signinStatus[key] = '已签到'; const acc = findAccountByKey(key); if (acc) { acc.manual_signin_required = false; acc.manual_signin_reason = ''; } log(`${label} 今日已签到`, 'warn2'); alreadyCount += 1; }
-    else { state.signinStatus[key] = '已签到'; const acc = findAccountByKey(key); if (acc) { acc.manual_signin_required = false; acc.manual_signin_reason = ''; } log(`${label} 签到成功`, 'ok'); okCount += 1; }
+    if (r.state === 'UNSUPPORTED') { markAccountCheckinUnsupported(key); log(`${label} 不可签到`, 'warn2'); unsupportedCount += 1; }
+    else if (r.state === 'FAILED') { state.signinStatus[key] = '未签到'; log(`${label} 签到失败：${r.message || ''}`, 'bad2'); unsignedCount += 1; }
+    else if (r.state === 'ALREADY_SIGNED') { state.signinStatus[key] = '已签到'; log(`${label} 今日已签到`, 'warn2'); alreadyCount += 1; }
+    else { state.signinStatus[key] = '已签到'; log(`${label} 签到成功`, 'ok'); okCount += 1; }
   }
   const skippedSigned = Number(data.skipped_signed || 0);
   const skippedUnsupported = Number(data.skipped_unsupported || 0);
@@ -3214,9 +3199,13 @@ async function statusAll() {
   for (const r of data.results || []) {
     const key = String(r.account_index || '');
     const label = accountLabel(key);
-    state.statusResults[key] = r;
+    if (r.session_valid || r.status_state === 'VALID') {
+      state.statusResults[key] = r;
+      delete state.statusErrors[key];
+    } else {
+      state.statusErrors[key] = r;
+    }
     state.signinStatus[key] = r.signin_status;
-    if (r.signin_status === '不可签到') markAccountSiteCheckinUnsupported(key);
     if (r.session_valid) { log(`${label} 检测成功`, 'ok'); validCount += 1; }
     else { log(`${label} 检测异常：${r.api_error || ''}`, 'warn2'); failCount += 1; }
   }
@@ -3629,4 +3618,3 @@ refreshAccounts()
 </script>
 </body>
 </html>
-

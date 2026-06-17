@@ -85,7 +85,7 @@
 | `data/session.json` | 顶层默认地址和账号配置。账号字段包括 `account_index`、`name`、`enabled`、`provider`、`base_url`、`new_api_user`、`session`、`cookie`、`api_keys`、`remark`。账号备注保存在这里。 |
 | `data/quota_history.json` | 每个账号的额度历史，用于计算与上次检测、昨天最后一次检测的差值。 |
 | `data/signin_status.json` | 当天签到状态，以稳定账号序号为主要键；旧名称键会被迁移。 |
-| `data/status_cache.json` | 最近一次账号检测结果和站点能力信息，远端失败时可用于回显。 |
+| `data/status_cache.json` | 最近一次成功账号检测结果和站点能力信息；失败检测不会覆盖这里的成功结果。 |
 | `data/token_cache.json` | 令牌分组和令牌元数据缓存；完整 `sk-...` key 不持久化。 |
 | `data/site_info.json` | 地址级备注、过滤后的模型列表、模型检测时间和失败状态。地址备注只保存在这里。 |
 | `data/_patch_name_duplicate.py.tmp` | 旧修改过程遗留的临时文件，不参与运行。 |
@@ -146,7 +146,8 @@
 - 自定义 Cookie 站点：`build_custom_cookie_auth`、`classify_custom_cookie_checkin`、`request_custom_cookie_self_with_retry`。
 - 签到判断：`classify_checkin`。
 - 余额/账号状态：`check_status`。
-- 不可签到：`checkin_response_unsupported`、`cached_checkin_disabled`、`is_forced_unsupported_checkin_site`。
+- 不可签到：`checkin_response_unsupported`、`is_forced_unsupported_checkin_site`；当前逻辑只把本账号的当天签到状态设为 `不可签到`，不会自动扩散到同地址其他账号。
+- 检测失败缓存：`set_status_cache` 只保存成功检测结果；前端会用 `statusErrors` 显示当前异常，同时右侧详情保留 `statusResults` / `last_status` 中的最后成功结果。
 - 路由：
   - `POST /api/accounts/<account_index>/checkin`
   - `POST /api/accounts/checkin-all`
@@ -190,7 +191,7 @@
 - `state.accounts`：公开账号列表。
 - `state.selected`：当前单账号详情。
 - `state.selectedSite`：当前地址详情。
-- `state.signinStatus` / `state.statusResults`：签到与检测结果。
+- `state.signinStatus` / `state.statusResults` / `state.statusErrors`：签到状态、最后成功检测结果、当前检测异常结果。
 - `state.tokenGroups` / `state.tokens` / `state.tokenLoading`：令牌状态。
 - `state.siteInfo` / `state.siteLoading`：地址备注和模型状态。
 - `state.collapsedGroups`：地址分组展开状态。
