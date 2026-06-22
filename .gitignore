@@ -16,4 +16,20 @@ build_artifacts/
 qiandao.exe
 qiandao.lnk
 qiandao_launcher.exe
+run_web.exe
 *.spec
+
+# Tool/generated temporary files
+.pytest_cache/
+.__script_to_exe_*.bat
+_ai_*.py
+_complete_*.py
+_extract*.py
+_extract*_out.txt
+_grep_tmp.py
+_inspect.py
+_lines*.py
+_patch_*.py
+_snippet_*.txt
+_tmp_*.py
+snippet*.txt

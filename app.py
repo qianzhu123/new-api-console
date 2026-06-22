@@ -37,7 +37,6 @@ MODELS_PATH = "/api/user/models"
 SUB2API_SELF_PATH = "/api/v1/auth/me"
 SUB2API_GROUPS_PATH = "/api/v1/groups/available"
 SUB2API_KEYS_PATH = "/api/v1/keys"
-TIMEOUT_SECONDS = 20
 def parse_positive_int_env(name: str, default: int) -> int:
     try:
         value = int(os.getenv(name, str(default)) or str(default))
@@ -46,7 +45,9 @@ def parse_positive_int_env(name: str, default: int) -> int:
     return max(1, value)
 
 
-MAX_BATCH_WORKERS = parse_positive_int_env("QIANDAO_MAX_BATCH_WORKERS", 8)
+TIMEOUT_SECONDS = parse_positive_int_env("QIANDAO_TIMEOUT_SECONDS", 10)
+HTTP_RETRY_ATTEMPTS = parse_positive_int_env("QIANDAO_HTTP_RETRY_ATTEMPTS", 2)
+MAX_BATCH_WORKERS = parse_positive_int_env("QIANDAO_MAX_BATCH_WORKERS", 24)
 DEFAULT_HEADERS = {
     "accept": "application/json, text/plain, */*",
     "cache-control": "no-store",
@@ -579,7 +580,19 @@ def _normalize_status_cache(data: dict[str, Any]) -> tuple[dict[str, Any], bool]
                 if not isinstance(name, str) or not isinstance(item, dict):
                     changed = True
                     continue
-                normalized["accounts"][name] = item
+                if "latest" in item or "last_success" in item:
+                    latest = item.get("latest") if isinstance(item.get("latest"), dict) else None
+                    last_success = item.get("last_success") if isinstance(item.get("last_success"), dict) else None
+                    normalized["accounts"][name] = {
+                        "latest": latest,
+                        "last_success": last_success,
+                    }
+                else:
+                    normalized["accounts"][name] = {
+                        "latest": item,
+                        "last_success": item if status_result_successful(item) else None,
+                    }
+                    changed = True
         else:
             changed = True
     else:
@@ -588,6 +601,10 @@ def _normalize_status_cache(data: dict[str, Any]) -> tuple[dict[str, Any], bool]
     if data != normalized:
         changed = True
     return normalized, changed
+
+
+def status_result_successful(result: dict[str, Any] | None) -> bool:
+    return isinstance(result, dict) and (result.get("status_state") == "VALID" or result.get("session_valid") is True)
 
 
 def load_status_cache(normalize_and_persist: bool = True) -> dict[str, Any]:
@@ -611,15 +628,24 @@ def load_status_cache(normalize_and_persist: bool = True) -> dict[str, Any]:
 def set_status_cache(account_name: str, result: dict[str, Any]) -> None:
     if not account_name or not isinstance(result, dict):
         return
-    if not (result.get("status_state") == "VALID" or result.get("session_valid") is True):
-        return
     with config_lock:
         store = load_status_cache(normalize_and_persist=False)
         accounts = store.setdefault("accounts", {})
         if not isinstance(accounts, dict):
             accounts = {}
             store["accounts"] = accounts
-        accounts[account_name] = result
+        item = accounts.get(account_name)
+        if not isinstance(item, dict):
+            item = {}
+        if "latest" not in item and "last_success" not in item:
+            item = {
+                "latest": item if item else None,
+                "last_success": item if status_result_successful(item) else None,
+            }
+        item["latest"] = result
+        if status_result_successful(result):
+            item["last_success"] = result
+        accounts[account_name] = item
         atomic_save_json(STATUS_CACHE_PATH, store)
 
 
@@ -633,7 +659,26 @@ def get_status_cache(account_name: str) -> dict[str, Any] | None:
     item = accounts.get(account_name)
     if not isinstance(item, dict):
         return None
-    return item if item.get("status_state") == "VALID" or item.get("session_valid") is True else None
+    if "latest" in item or "last_success" in item:
+        last_success = item.get("last_success")
+        return last_success if status_result_successful(last_success) else None
+    return item if status_result_successful(item) else None
+
+
+def get_latest_status_cache(account_name: str) -> dict[str, Any] | None:
+    if not account_name:
+        return None
+    store = load_status_cache(normalize_and_persist=True)
+    accounts = store.get("accounts", {})
+    if not isinstance(accounts, dict):
+        return None
+    item = accounts.get(account_name)
+    if not isinstance(item, dict):
+        return None
+    if "latest" in item or "last_success" in item:
+        latest = item.get("latest")
+        return latest if isinstance(latest, dict) else None
+    return item
 
 
 def move_runtime_entry(path: pathlib.Path, old_name: str, new_name: str) -> None:
@@ -854,14 +899,19 @@ def normalize_site_color(raw: Any) -> str:
 
 
 def normalize_site_checkin_mode(raw: Any) -> str:
-    value = str(raw or "auto").strip().lower()
-    if value in {"enabled", "disabled"}:
+    value = str(raw or "enabled").strip().lower()
+    if value in {"enabled", "manual", "disabled"}:
         return value
-    return "auto"
+    # Older data used "auto"; treat it as the normal automatic sign-in mode.
+    return "enabled"
 
 
 def is_site_checkin_manually_disabled(base_url: str) -> bool:
     return normalize_site_checkin_mode(get_site_info(base_url).get("checkin_mode")) == "disabled"
+
+
+def is_site_checkin_manual(base_url: str) -> bool:
+    return normalize_site_checkin_mode(get_site_info(base_url).get("checkin_mode")) == "manual"
 
 
 def is_site_checkin_manually_enabled(base_url: str) -> bool:
@@ -875,13 +925,14 @@ def get_site_info(base_url: str) -> dict[str, Any]:
     if not isinstance(entry, dict):
         entry = {}
     models = entry.get("models")
+    checkin_mode = normalize_site_checkin_mode(entry.get("checkin_mode")) if "checkin_mode" in entry else "auto"
     return {
         "base_url": normalized_url,
         "remark": str(entry.get("remark") or ""),
         "special_info": str(entry.get("special_info") or ""),
         "display_color": normalize_site_color(entry.get("display_color")),
         "pinned": bool(entry.get("pinned", False)),
-        "checkin_mode": normalize_site_checkin_mode(entry.get("checkin_mode")),
+        "checkin_mode": checkin_mode,
         "models": [str(model) for model in models if str(model).strip()] if isinstance(models, list) else [],
         "models_loaded": isinstance(models, list),
         "models_failed": bool(entry.get("models_failed")),
@@ -1331,7 +1382,7 @@ def request_self_with_retry(session_value: str, user_id: str, base_url: str) -> 
         base_url=base_url,
     )
 
-    attempts = 3
+    attempts = HTTP_RETRY_ATTEMPTS
     last_error = None
     for idx in range(1, attempts + 1):
         try:
@@ -1352,7 +1403,7 @@ def request_self_with_retry(session_value: str, user_id: str, base_url: str) -> 
 def request_sub2api_self_with_retry(account: dict[str, Any]) -> tuple[requests.Response | None, dict[str, Any], str | None]:
     base_url, session_value, headers, cookies = build_token_headers(account)
     url = base_url.rstrip("/") + "/" + SUB2API_SELF_PATH.lstrip("/") + "?timezone=Asia%2FShanghai"
-    attempts = 3
+    attempts = HTTP_RETRY_ATTEMPTS
     last_error = None
     for idx in range(1, attempts + 1):
         try:
@@ -1599,7 +1650,7 @@ def request_custom_cookie_self_with_retry(account: dict[str, Any]) -> tuple[requ
     base_url = normalize_base_url(str(account.get("base_url") or get_base_url()))
     cookies, headers = build_custom_cookie_auth(account)
     url = base_url.rstrip("/") + "/" + CUSTOM_SELF_PATH.lstrip("/")
-    attempts = 3
+    attempts = HTTP_RETRY_ATTEMPTS
     last_error = None
     for idx in range(1, attempts + 1):
         try:
@@ -1632,7 +1683,7 @@ def classify_checkin(account: dict[str, Any]) -> dict[str, Any]:
     base_url = normalize_base_url(str(account.get("base_url") or get_base_url()))
     provider = account_provider(account)
 
-    if is_forced_unsupported_checkin_site(base_url) or is_site_checkin_manually_disabled(base_url):
+    if is_forced_unsupported_checkin_site(base_url) or is_site_checkin_manually_disabled(base_url) or is_site_checkin_manual(base_url):
         return {
             "account": name,
             "account_index": account_index,
@@ -2005,11 +2056,17 @@ def sanitize_dedicated_status_result(base_url: str, result: dict[str, Any] | Non
     return result
 
 
-def to_public_account(account: dict[str, Any], signin_status: str = "未签到", last_status: dict[str, Any] | None = None) -> dict[str, Any]:
+def to_public_account(
+    account: dict[str, Any],
+    signin_status: str = "未签到",
+    last_status: dict[str, Any] | None = None,
+    latest_status: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     api_keys = parse_api_keys(account.get("api_keys"))
     account_base_url = normalize_base_url(str(account.get("base_url") or get_base_url()))
     signin_status = normalize_dedicated_signin_status(account_base_url, signin_status)
     last_status = sanitize_dedicated_status_result(account_base_url, last_status)
+    latest_status = sanitize_dedicated_status_result(account_base_url, latest_status)
     public_signin_status = signin_status if signin_status in ("已签到", "不可签到") else "未签到"
     return {
         "account_index": int(account.get("account_index", 0) or 0),
@@ -2025,6 +2082,7 @@ def to_public_account(account: dict[str, Any], signin_status: str = "未签到",
         "api_keys_masked": [mask_api_key(k) for k in api_keys],
         "signin_status": public_signin_status,
         "last_status": last_status if isinstance(last_status, dict) else None,
+        "latest_status": latest_status if isinstance(latest_status, dict) else None,
     }
 
 
@@ -2112,16 +2170,26 @@ def find_import_update_account(
     imported_account: dict[str, Any],
 ) -> tuple[int, dict[str, Any]] | tuple[int, None]:
     wanted_url = normalize_base_url(str(imported_account.get("base_url") or ""))
+    wanted_user_id = str(imported_account.get("new_api_user") or "").strip()
     wanted_name = str(imported_account.get("name") or "").strip().lower()
-    if not wanted_url or not wanted_name:
+    if not wanted_url or (not wanted_user_id and not wanted_name):
         return -1, None
 
+    matching_url_accounts: list[tuple[int, dict[str, Any]]] = []
     for idx, account in enumerate(accounts):
         if not isinstance(account, dict):
             continue
         account_url = normalize_base_url(str(account.get("base_url") or get_base_url()))
         if account_url != wanted_url:
             continue
+        matching_url_accounts.append((idx, account))
+        account_user_id = str(account.get("new_api_user") or "").strip()
+        if wanted_user_id and account_user_id == wanted_user_id:
+            return idx, account
+
+    if wanted_user_id:
+        return -1, None
+    for idx, account in matching_url_accounts:
         account_name = str(account.get("name") or "").strip().lower()
         if account_name and account_name == wanted_name:
             return idx, account
@@ -2174,10 +2242,18 @@ def build_public_accounts(accounts: list[dict[str, Any]]) -> list[dict[str, Any]
         status = item.get("status") if isinstance(item, dict) else "未签到"
         account_base_url = normalize_base_url(str(acc.get("base_url") or get_base_url()))
         status = normalize_dedicated_signin_status(account_base_url, status or "未签到")
-        last_status = status_map.get(runtime_key) if isinstance(status_map.get(runtime_key), dict) else None
-        if last_status is None and name_counts.get(name) == 1:
-            last_status = status_map.get(name) if isinstance(status_map.get(name), dict) else None
-        out.append(to_public_account(acc, signin_status=status or "未签到", last_status=last_status))
+        if is_site_checkin_manually_disabled(account_base_url) or is_forced_unsupported_checkin_site(account_base_url):
+            status = "不可签到"
+        cached_status = status_map.get(runtime_key) if isinstance(status_map.get(runtime_key), dict) else None
+        if cached_status is None and name_counts.get(name) == 1:
+            cached_status = status_map.get(name) if isinstance(status_map.get(name), dict) else None
+        if isinstance(cached_status, dict) and ("latest" in cached_status or "last_success" in cached_status):
+            latest_status = cached_status.get("latest") if isinstance(cached_status.get("latest"), dict) else None
+            last_status = cached_status.get("last_success") if isinstance(cached_status.get("last_success"), dict) else None
+        else:
+            latest_status = cached_status
+            last_status = cached_status if status_result_successful(cached_status) else None
+        out.append(to_public_account(acc, signin_status=status or "未签到", last_status=last_status, latest_status=latest_status))
     return out
 
 
@@ -2807,6 +2883,7 @@ def update_account(account_index: int):
             updated,
             signin_status=get_signin_status_today(old_key),
             last_status=get_status_cache(old_key),
+            latest_status=get_latest_status_cache(old_key),
         ),
         "accounts": build_public_accounts(cfg["accounts"]),
     })
@@ -2836,6 +2913,35 @@ def delete_account(account_index: int):
     cfg["accounts"] = accounts
     cfg = save_config(cfg)
     return jsonify({"ok": True, "deleted": removed.get("name"), "accounts": build_public_accounts(cfg["accounts"])})
+
+
+def site_accounts_for_base_url(base_url: str) -> list[dict[str, Any]]:
+    normalized = normalize_base_url(base_url)
+    cfg = load_config()
+    default_base_url = normalize_base_url(str(cfg.get("base_url") or get_base_url()))
+    return [
+        account
+        for account in cfg.get("accounts", [])
+        if normalize_base_url(str(account.get("base_url") or default_base_url)) == normalized
+    ]
+
+
+def set_site_signin_status_today(base_url: str, status: str) -> None:
+    for account in site_accounts_for_base_url(base_url):
+        account_index = int(account.get("account_index", 0) or 0)
+        runtime_key = str(account_index) if account_index > 0 else str(account.get("name") or "")
+        if runtime_key:
+            set_signin_status_today(runtime_key, status)
+
+
+def clear_site_signin_status_today(base_url: str, only_status: str | None = None) -> None:
+    for account in site_accounts_for_base_url(base_url):
+        account_index = int(account.get("account_index", 0) or 0)
+        runtime_key = str(account_index) if account_index > 0 else str(account.get("name") or "")
+        if not runtime_key:
+            continue
+        if only_status is None or get_signin_status_today(runtime_key) == only_status:
+            clear_signin_status_today(runtime_key)
 
 
 @app.route("/api/sites/accounts", methods=["DELETE"])
@@ -2883,9 +2989,11 @@ def checkin_one(account_index: int):
         return jsonify({"ok": False, "error": "account not found"}), 404
     account_base_url = normalize_base_url(str(accounts[idx].get("base_url") or get_base_url()))
     runtime_key = str(account_index)
-    if is_site_checkin_manually_disabled(account_base_url):
-        result = {"account": accounts[idx].get("name") or "unknown", "account_index": account_index, "state": "UNSUPPORTED", "message": "该地址已手动设置为不可签到，已跳过签到", "timestamp": now_ts()}
-        set_signin_status_today(runtime_key, "不可签到")
+    if is_site_checkin_manually_disabled(account_base_url) or is_site_checkin_manual(account_base_url):
+        mode_text = "不可签到" if is_site_checkin_manually_disabled(account_base_url) else "手动签到"
+        result = {"account": accounts[idx].get("name") or "unknown", "account_index": account_index, "state": "UNSUPPORTED", "message": f"该地址已设置为{mode_text}，已跳过自动签到", "timestamp": now_ts()}
+        if is_site_checkin_manually_disabled(account_base_url):
+            set_signin_status_today(runtime_key, "不可签到")
         return jsonify({"ok": True, "result": result})
     result = classify_checkin(accounts[idx])
     result["account_index"] = account_index
@@ -2914,7 +3022,7 @@ def checkin_all():
         signin_status = get_signin_status_today(runtime_key)
         if is_site_with_dedicated_checkin(account_base_url) and signin_status == "不可签到":
             signin_status = "未签到"
-        if not is_site_with_dedicated_checkin(account_base_url) and (is_site_checkin_manually_disabled(account_base_url) or signin_status == "不可签到"):
+        if not is_site_with_dedicated_checkin(account_base_url) and (is_site_checkin_manually_disabled(account_base_url) or is_site_checkin_manual(account_base_url) or signin_status == "不可签到"):
             skipped_unsupported += 1
             continue
         if signin_status != "未签到":
@@ -2964,8 +3072,7 @@ def status_one(account_index: int):
     if is_site_with_dedicated_checkin(account_base_url) and signin_status == "不可签到":
         signin_status = "未签到"
     result["signin_status"] = signin_status
-    if result.get("status_state") == "VALID" or result.get("session_valid") is True:
-        set_status_cache(str(account_index), result)
+    set_status_cache(str(account_index), result)
     return jsonify({"ok": True, "result": result, "system_status": system_status})
 
 
@@ -2994,8 +3101,7 @@ def status_all():
             signin_status = "未签到"
         result["account_index"] = account_index
         result["signin_status"] = signin_status
-        if result.get("status_state") == "VALID" or result.get("session_valid") is True:
-            set_status_cache(runtime_key, result)
+        set_status_cache(runtime_key, result)
         return result
 
     results = run_batch_parallel(accounts, check_account_status)
@@ -3192,7 +3298,8 @@ def site_info():
     remark = str(payload.get("remark") or "").strip() if isinstance(payload, dict) else ""
     special_info = str(payload.get("special_info") or "").strip() if isinstance(payload, dict) else ""
     display_color = str(payload.get("display_color") or "").strip() if isinstance(payload, dict) else ""
-    checkin_mode = normalize_site_checkin_mode(payload.get("checkin_mode") if isinstance(payload, dict) else None)
+    has_checkin_mode = isinstance(payload, dict) and "checkin_mode" in payload
+    checkin_mode = normalize_site_checkin_mode(payload.get("checkin_mode")) if has_checkin_mode else None
     pinned = bool(payload.get("pinned", False)) if isinstance(payload, dict) else False
     if not base_url:
         return jsonify({"ok": False, "error": "base_url is required"}), 400
@@ -3202,7 +3309,49 @@ def site_info():
         return jsonify({"ok": False, "error": "special_info must not exceed 100 characters"}), 400
     if display_color and not normalize_site_color(display_color):
         return jsonify({"ok": False, "error": "display_color must be a hex color like #ff8800"}), 400
-    return jsonify({"ok": True, "site": update_site_info(base_url, remark=remark, special_info=special_info, display_color=display_color, pinned=pinned, checkin_mode=checkin_mode)})
+    site = update_site_info(base_url, remark=remark, special_info=special_info, display_color=display_color, pinned=pinned, checkin_mode=checkin_mode)
+    if has_checkin_mode and site.get("checkin_mode") == "disabled":
+        set_site_signin_status_today(base_url, "不可签到")
+    elif has_checkin_mode and site.get("checkin_mode") in ("enabled", "manual"):
+        clear_site_signin_status_today(base_url, only_status="不可签到")
+    return jsonify({"ok": True, "site": site, "accounts": build_public_accounts(load_config(normalize_and_persist=False).get("accounts", []))})
+
+
+@app.route("/api/sites/manual-signin", methods=["POST"])
+def site_manual_signin():
+    payload = request.get_json(force=True)
+    base_url = str(payload.get("base_url") or "").strip() if isinstance(payload, dict) else ""
+    signed = bool(payload.get("signed", False)) if isinstance(payload, dict) else False
+    if not base_url:
+        return jsonify({"ok": False, "error": "base_url is required"}), 400
+    site = update_site_info(base_url, checkin_mode="manual")
+    if signed:
+        set_site_signin_status_today(base_url, "已签到")
+    else:
+        clear_site_signin_status_today(base_url, only_status="已签到")
+    return jsonify({"ok": True, "site": site, "accounts": build_public_accounts(load_config().get("accounts", []))})
+
+
+@app.route("/api/sites/checkin-status", methods=["POST"])
+def site_checkin_status():
+    payload = request.get_json(force=True)
+    base_url = str(payload.get("base_url") or "").strip() if isinstance(payload, dict) else ""
+    if not base_url:
+        return jsonify({"ok": False, "error": "base_url is required"}), 400
+    normalized = normalize_base_url(base_url)
+    system_status = fetch_public_status(base_url=normalized)
+    disabled = is_forced_unsupported_checkin_site(normalized) or system_status.get("checkin_enabled") is False
+    site = update_site_info(normalized, checkin_mode="disabled" if disabled else "enabled")
+    if disabled:
+        set_site_signin_status_today(normalized, "不可签到")
+    else:
+        clear_site_signin_status_today(normalized, only_status="不可签到")
+    return jsonify({
+        "ok": True,
+        "site": site,
+        "system_status": system_status,
+        "accounts": build_public_accounts(load_config().get("accounts", [])),
+    })
 
 
 @app.route("/api/sites/models", methods=["POST"])
@@ -3226,17 +3375,163 @@ def site_models():
     return jsonify({"ok": True, "models": models, "site": info, "payload": api_response})
 
 
+def parse_import_json_request(payload: Any) -> dict[str, Any]:
+    raw = payload.get("json") if isinstance(payload, dict) else payload
+    if isinstance(raw, str):
+        parsed = json.loads(raw)
+    elif isinstance(raw, dict):
+        parsed = raw
+    else:
+        raise ValueError("请粘贴 JSON 文本")
+    if not isinstance(parsed, dict):
+        raise ValueError("请粘贴 JSON 对象")
+    return parsed
+
+
+def persist_account_checkin_result(account: dict[str, Any], result: dict[str, Any]) -> None:
+    account_index = int(account.get("account_index", 0) or 0)
+    runtime_key = str(account_index) if account_index > 0 else str(account.get("name") or "")
+    state = str(result.get("state") or "")
+    if state in ("SIGNED_NOW", "ALREADY_SIGNED"):
+        set_signin_status_today(runtime_key, "已签到")
+    elif state == "UNSUPPORTED":
+        set_signin_status_today(runtime_key, "不可签到")
+    elif state == "FAILED":
+        set_signin_status_today(runtime_key, "未签到")
+
+
+@app.route("/api/auth/sync-account", methods=["POST"])
+def sync_imported_account():
+    try:
+        payload = request.get_json(force=True)
+        import_json = parse_import_json_request(payload)
+        imported, notes = build_auth_account_from_import_json(import_json)
+        cfg = load_config(normalize_and_persist=False)
+        accounts = cfg.get("accounts", [])
+        if not isinstance(accounts, list):
+            accounts = []
+            cfg["accounts"] = accounts
+
+        idx, existing = find_import_update_account(accounts, imported)
+        created = existing is None
+        if existing is not None:
+            account = merge_imported_account(existing, imported)
+            accounts[idx] = account
+        else:
+            account = normalize_account({**imported, "enabled": True, "remark": "", "api_keys": []})
+            ensure_unique_account(accounts, account)
+            account["account_index"] = get_next_account_index(accounts)
+            accounts.append(account)
+
+        cfg["accounts"] = accounts
+        cfg = save_config(cfg)
+        account_index = int(account.get("account_index", 0) or 0)
+        saved_idx = get_account_index(cfg.get("accounts", []), account_index)
+        if saved_idx < 0:
+            raise RuntimeError("saved account not found")
+        account = cfg["accounts"][saved_idx]
+        account_base_url = normalize_base_url(str(account.get("base_url") or get_base_url()))
+
+        checkin_result = None
+        if created:
+            checkin_result = classify_checkin(account)
+            checkin_result["account_index"] = account_index
+            persist_account_checkin_result(account, checkin_result)
+
+        system_status = fetch_public_status(base_url=account_base_url)
+        result = check_status(account, system_status=system_status)
+        result["account_index"] = account_index
+        signin_status = get_signin_status_today(str(account_index))
+        if is_site_with_dedicated_checkin(account_base_url) and signin_status == "不可签到":
+            signin_status = "未签到"
+        result["signin_status"] = signin_status
+        set_status_cache(str(account_index), result)
+
+        action_note = "已创建新账号并完成签到和检测" if created else "已按网站地址和用户 ID 更新现有账号并完成检测"
+        return jsonify({
+            "ok": True,
+            "created": created,
+            "updated": not created,
+            "account": to_public_account(
+                account,
+                signin_status=signin_status,
+                last_status=get_status_cache(str(account_index)),
+                latest_status=get_latest_status_cache(str(account_index)),
+            ),
+            "accounts": build_public_accounts(cfg["accounts"]),
+            "checkin_result": checkin_result,
+            "result": result,
+            "system_status": system_status,
+            "notes": list(notes) + [action_note],
+        })
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+
+
+@app.route("/api/accounts/<int:account_index>/refresh-auth", methods=["POST"])
+def refresh_account_auth(account_index: int):
+    try:
+        payload = request.get_json(force=True)
+        import_json = parse_import_json_request(payload)
+        cfg = load_config(normalize_and_persist=False)
+        accounts = cfg.get("accounts", [])
+        if not isinstance(accounts, list):
+            accounts = []
+            cfg["accounts"] = accounts
+        idx = get_account_index(accounts, account_index)
+        if idx < 0:
+            return jsonify({"ok": False, "error": "account not found"}), 404
+
+        existing = accounts[idx]
+        existing_base_url = normalize_base_url(str(existing.get("base_url") or cfg.get("base_url") or get_base_url()))
+        imported, notes = build_auth_account_from_import_json(import_json, fallback_base_url=existing_base_url)
+        imported_base_url = normalize_base_url(str(imported.get("base_url") or existing_base_url))
+        if imported_base_url != existing_base_url:
+            return jsonify({"ok": False, "error": f"采集站点与当前账号地址不匹配：{imported_base_url} != {existing_base_url}"}), 400
+
+        updated = merge_imported_account(existing, imported)
+        updated["account_index"] = account_index
+        accounts[idx] = updated
+        cfg["accounts"] = accounts
+        cfg = save_config(cfg)
+        updated = cfg["accounts"][idx]
+
+        system_status = fetch_public_status(base_url=existing_base_url)
+        result = check_status(updated, system_status=system_status)
+        result["account_index"] = account_index
+        signin_status = get_signin_status_today(str(account_index))
+        if is_site_with_dedicated_checkin(existing_base_url) and signin_status == "不可签到":
+            signin_status = "未签到"
+        result["signin_status"] = signin_status
+        set_status_cache(str(account_index), result)
+
+        return jsonify({
+            "ok": True,
+            "updated": True,
+            "account": to_public_account(
+                updated,
+                signin_status=signin_status,
+                last_status=get_status_cache(str(account_index)),
+                latest_status=get_latest_status_cache(str(account_index)),
+            ),
+            "accounts": build_public_accounts(cfg["accounts"]),
+            "result": result,
+            "system_status": system_status,
+            "notes": list(notes) + ["已更新当前账号登录信息并重新检测"],
+        })
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+
+
 @app.route("/api/auth/import-json", methods=["POST"])
 def auth_import_json():
     try:
         payload = request.get_json(force=True)
-        raw = payload.get("json") if isinstance(payload, dict) else payload
-        if isinstance(raw, str):
-            import_json = json.loads(raw)
-        elif isinstance(raw, dict):
-            import_json = raw
-        else:
-            raise ValueError("请粘贴 JSON 文本")
+        import_json = parse_import_json_request(payload)
         account, notes = build_auth_account_from_import_json(import_json)
         cfg = load_config(normalize_and_persist=False)
         accounts = cfg.get("accounts", [])
@@ -3252,7 +3547,12 @@ def auth_import_json():
             return jsonify({
                 "ok": True,
                 "updated": True,
-                "account": to_public_account(updated, signin_status=get_signin_status_today(str(updated.get("account_index") or "")), last_status=get_status_cache(str(updated.get("account_index") or ""))),
+                "account": to_public_account(
+                    updated,
+                    signin_status=get_signin_status_today(str(updated.get("account_index") or "")),
+                    last_status=get_status_cache(str(updated.get("account_index") or "")),
+                    latest_status=get_latest_status_cache(str(updated.get("account_index") or "")),
+                ),
                 "accounts": build_public_accounts(cfg["accounts"]),
                 "notes": list(notes) + ["已发现相同网站地址和账户名，已更新现有账号信息"],
             })

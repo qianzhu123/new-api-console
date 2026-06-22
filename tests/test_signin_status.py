@@ -414,6 +414,56 @@ def test_status_failure_does_not_overwrite_last_success_or_mark_site(tmp_path, m
     assert app.get_site_info("https://example.test")["checkin_mode"] == "auto"
 
 
+def test_status_failure_persists_latest_error_while_preserving_last_success(tmp_path, monkeypatch):
+    monkeypatch.setattr(app, "CONFIG_PATH", tmp_path / "session.json")
+    monkeypatch.setattr(app, "SIGNIN_PATH", tmp_path / "signin_status.json")
+    monkeypatch.setattr(app, "STATUS_CACHE_PATH", tmp_path / "status_cache.json")
+    monkeypatch.setattr(app, "SITE_INFO_PATH", tmp_path / "site_info.json")
+    write_json(
+        app.CONFIG_PATH,
+        {
+            "accounts": [
+                {
+                    "account_index": 7,
+                    "name": "first",
+                    "enabled": True,
+                    "base_url": "https://example.test",
+                    "new_api_user": "7",
+                    "session": "session-value-that-is-long-enough",
+                }
+            ]
+        },
+    )
+    last_success = {
+        "account": "first",
+        "account_index": 7,
+        "status_state": "VALID",
+        "session_valid": True,
+        "quota": {"quota": 123},
+    }
+    latest_error = {
+        "account": "first",
+        "account_index": 7,
+        "status_state": "API_ERROR",
+        "session_valid": False,
+        "api_error": "boom",
+    }
+    write_json(app.STATUS_CACHE_PATH, {"accounts": {"7": last_success}})
+    monkeypatch.setattr(app, "fetch_public_status", lambda base_url=None: {"ok": True})
+    monkeypatch.setattr(app, "check_status", lambda account, system_status=None: dict(latest_error))
+
+    with app.app.test_client() as client:
+        response = client.post("/api/accounts/7/status", json={})
+        accounts_response = client.get("/api/accounts")
+
+    assert response.status_code == 200
+    assert app.get_status_cache("7") == last_success
+    assert app.get_latest_status_cache("7")["status_state"] == "API_ERROR"
+    account = accounts_response.get_json()["accounts"][0]
+    assert account["last_status"]["status_state"] == "VALID"
+    assert account["latest_status"]["status_state"] == "API_ERROR"
+
+
 def test_frontend_disables_unsupported_group_checkin_and_uses_chevron_icon():
     template = (app.ROOT / "templates" / "index.html").read_text(encoding="utf-8")
 
@@ -429,6 +479,19 @@ def test_frontend_disables_unsupported_group_checkin_and_uses_chevron_icon():
     assert "manual_signin_required" not in template
     assert "'▶'" not in template
     assert "'▼'" not in template
+
+
+def test_frontend_restores_latest_status_errors_after_refresh():
+    template = (app.ROOT / "templates" / "index.html").read_text(encoding="utf-8")
+
+    assert "acc.latest_status" in template
+    assert "state.statusErrors[key] = acc.latest_status" in template
+
+
+def test_batch_defaults_are_tuned_for_parallel_network_work():
+    assert app.MAX_BATCH_WORKERS >= 16
+    assert app.TIMEOUT_SECONDS <= 12
+    assert app.HTTP_RETRY_ATTEMPTS <= 2
 
 
 def test_detail_address_and_site_detail_interactions():

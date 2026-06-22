@@ -22,7 +22,7 @@
       --btn2: #6b7280;
       --accent: #d4af37;
       --shadow: 0 10px 30px rgba(68, 52, 31, 0.08);
-      --action-col: 168px;
+      --action-col: 218px;
     }
     * { box-sizing: border-box; }
     html, body { height: 100%; }
@@ -117,17 +117,22 @@
     .account-row.has-site-color { border-left: 4px solid var(--site-color, var(--accent)); }
     .site-color-dot { display:inline-block; width:10px; height:10px; border-radius:999px; background:var(--site-color, var(--accent)); box-shadow:0 0 0 3px rgba(0,0,0,.06); flex:0 0 auto; }
     .site-special-chip { display:inline-flex; align-items:center; gap:5px; border-radius:999px; padding:2px 8px; font-size:12px; font-weight:700; color:var(--site-color, #715829); background:rgba(255,255,255,.72); border:1px solid color-mix(in srgb, var(--site-color, #d4af37) 36%, #ffffff); box-shadow:none; }
+    .site-manual-chip { display:inline-flex; align-items:center; gap:6px; border-radius:999px; padding:2px 8px; font-size:12px; font-weight:800; color:#975a16; background:rgba(183,121,31,.13); border:1px solid rgba(183,121,31,.24); }
+    .site-manual-chip .today-dot { width:8px; height:8px; border-radius:999px; background:#c53030; box-shadow:0 0 0 3px rgba(197,48,48,.12); }
+    .site-manual-chip.signed { color:#1f6b46; background:rgba(47,133,90,.14); border-color:rgba(47,133,90,.25); }
+    .site-manual-chip.signed .today-dot { background:#2f855a; box-shadow:0 0 0 3px rgba(47,133,90,.13); }
     .pin-mark { display:inline-flex; align-items:center; justify-content:center; margin-right:6px; border-radius:999px; padding:2px 8px; color:#355c7d; background:rgba(53,92,125,.10); border:1px solid rgba(53,92,125,.18); font-size:12px; font-weight:800; vertical-align:middle; }
     .site-pin-button { width:auto; height:32px; min-width:58px !important; padding:6px 11px !important; margin-left:0; color:#5f4e3b; background:rgba(255,255,255,.78); border-color:rgba(176,139,47,.26); box-shadow:none; }
     .site-pin-button.active { color:#fff; background:#355c7d; border-color:#355c7d; box-shadow:0 8px 18px rgba(53,92,125,.18); }
     .group-cell { padding: 12px 7px; overflow: visible !important; }
-    .group-box { display:grid; grid-template-columns:minmax(0, 1fr) var(--action-col); align-items:center; gap:12px; }
+    .group-box { display:grid; grid-template-columns:minmax(0, 1fr) var(--action-col); align-items:center; gap:10px; }
     .group-main { display:grid; grid-template-columns: 30px minmax(0, 1fr); gap:8px 10px; align-items:center; min-width:0; }
     .group-url { font-weight:700; word-break:break-all; }
     .group-stats { grid-column: 2; display:flex; gap:7px; flex-wrap:wrap; color: var(--sub); font-size: 12px; }
     .group-stat { display:inline-flex; font-weight:600; }
-    .group-actions { display:flex; gap:6px; flex-wrap:nowrap; justify-content:flex-start; flex-shrink:0; min-width:0; }
-    .group-actions button { padding:5px 4px; font-size:12px; min-width:0; white-space:nowrap; flex:0 0 auto; }
+    .group-actions { display:flex; gap:6px; flex-wrap:nowrap; justify-content:flex-end; align-items:center; flex-shrink:0; min-width:0; }
+    .group-actions button { padding:6px 9px; font-size:12px; min-width:54px; white-space:nowrap; flex:0 0 auto; border-radius:10px; box-shadow:0 3px 8px rgba(53,92,125,.18); }
+    .group-actions button.bad { box-shadow:0 3px 8px rgba(197,48,48,.18); }
     .fold-btn {
       width: 28px;
       height: 28px;
@@ -167,9 +172,9 @@
     }
     .list-tools .small { white-space:nowrap; }
     .sort-tools { display:flex; align-items:center; justify-content:flex-end; gap:8px; flex-wrap:nowrap; min-width:0; width:100%; }
-    .account-filter { flex:1 1 300px; min-width: 220px; max-width: 360px; height: 40px; padding: 8px 10px; }
-    .sort-tools select { flex:0 0 160px; width: 160px; height: 40px; padding: 8px 8px; }
-    .sort-tools button { flex:0 0 auto; padding: 8px 12px; height: 40px; }
+    .account-filter { flex:0 1 240px; min-width: 180px; max-width: 260px; height: 34px; padding: 6px 9px; font-size:12px; }
+    .sort-tools select { flex:0 0 150px; width: 150px; height: 34px; padding: 6px 8px; }
+    .sort-tools button { flex:0 0 auto; padding: 6px 10px; height: 34px; }
     .sort-tools button.active { outline: 2px solid rgba(212,175,55,.5); box-shadow: 0 0 0 3px rgba(212,175,55,.16), 0 3px 10px rgba(183,121,31,.23); }
     .drag-scroll-hint { box-shadow: inset 0 16px 18px -18px rgba(53,92,125,.55), inset 0 -16px 18px -18px rgba(53,92,125,.55); }
     .form-group { margin-bottom: 9px; }
@@ -421,6 +426,14 @@
     .site-special-preview { margin-top:8px; display:flex; gap:7px; flex-wrap:wrap; align-items:center; }
     .site-submit-actions { display:flex; justify-content:flex-end; gap:8px; margin-top:10px; }
     .site-submit-button { min-width:128px; padding:9px 16px; font-weight:700; }
+    .site-checkin-setting-grid { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:10px; align-items:end; margin-top:9px; }
+    .site-checkin-actions { display:flex; gap:8px; flex-wrap:wrap; justify-content:flex-end; align-items:center; }
+    .site-checkin-actions button { padding:8px 10px; font-size:12px; }
+    .manual-signin-card { margin-top:9px; padding:10px; border:1px solid rgba(183,121,31,.22); border-radius:13px; background:rgba(183,121,31,.06); display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap; }
+    .manual-signin-card .manual-title { font-weight:800; color:#5f4e3b; }
+    .manual-toggle-button { display:inline-flex; align-items:center; gap:7px; border-radius:999px; padding:8px 12px; }
+    .manual-toggle-button.signed { background:#2f855a; box-shadow:0 3px 10px rgba(47,133,90,.22); }
+    .manual-toggle-dot { width:9px; height:9px; border-radius:999px; background:rgba(255,255,255,.88); }
     .site-model-panel.collapsed .site-model-groups { display: none; }
     .site-model-panel-summary {
       display: flex;
@@ -651,6 +664,8 @@
     .auth-link-box.open { display:block; }
     .auth-bookmarklet { display:inline-block; max-width:100%; margin-top:6px; padding:6px 8px; border-radius:8px; background:#fffaf0; border:1px solid rgba(176,139,47,.30); color:#355c7d; font-size:12px; word-break:break-all; }
     .auth-page-link { display:inline-block; max-width:100%; margin-top:6px; padding:7px 9px; border-radius:8px; background:#355c7d; color:#fff; text-decoration:none; font-size:12px; word-break:break-all; }
+    .auth-refresh-section { border-color: rgba(197,48,48,.28); background: rgba(197,48,48,.035); }
+    .auth-refresh-actions { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-top:8px; }
     .combo-wrap { position: relative; }
     .site-special-combo .combo-toggle { top: 25px; }
     .combo-wrap input {
@@ -913,14 +928,8 @@
       <div class="card list-card">
         <div class="list-tools">
           <div class="small">地址分组列表</div>
-          <div class="sort-tools" aria-label="地址筛选排序">
+          <div class="sort-tools" aria-label="地址筛选">
             <input id="account-filter" class="account-filter" type="search" placeholder="搜索地址" autocomplete="off" />
-            <select id="sort-field" title="排序字段">
-              <option value="group">分组排序</option>
-              <option value="quota">额度排序</option>
-            </select>
-            <button id="btn-sort-asc" class="secondary" type="button" title="按当前字段升序排序">升序</button>
-            <button id="btn-sort-desc" class="warn" type="button" title="按当前字段降序排序">降序</button>
           </div>
         </div>
         <div class="account-table-wrap">
@@ -1138,8 +1147,6 @@ const state = {
   dragScrollSpeed: 0,
   collapsedGroups: {},
   accountFilter: '',
-  sortField: 'group',
-  sortDir: 'asc',
   tokenGroups: {},
   tokens: {},
   selectedTokenGroup: {},
@@ -1211,10 +1218,7 @@ const el = {
   btnCheckinAll: document.getElementById('btn-checkin-all'),
   btnStatusAll: document.getElementById('btn-status-all'),
   btnNew: document.getElementById('btn-new'),
-  sortField: document.getElementById('sort-field'),
   accountFilter: document.getElementById('account-filter'),
-  btnSortAsc: document.getElementById('btn-sort-asc'),
-  btnSortDesc: document.getElementById('btn-sort-desc'),
   fBaseUrlList: document.getElementById('f-base-url-list'),
   mBaseUrlList: document.getElementById('m-base-url-list'),
 };
@@ -1319,6 +1323,37 @@ function accountUserDisplay(acc) {
 function maskTag(enabled) { return enabled ? '<span class="tag ok">启用</span>' : '<span class="tag off">停用</span>'; }
 function setFieldInvalid(node, invalid) { if (node) node.classList.toggle('input-invalid', !!invalid); }
 function clearFieldStates(nodes) { for (const node of nodes) setFieldInvalid(node, false); }
+
+function buildAccountAuthRefreshUrl(acc, key) {
+  const baseUrl = normalizeBaseUrlInput(acc?.base_url || state.defaultBaseUrl);
+  if (!baseUrl) return '';
+  try {
+    const url = new URL(baseUrl);
+    const marker = String(key || accountKey(acc));
+    url.pathname = '/login';
+    url.searchParams.set('qiandao_account', marker);
+    url.searchParams.set('qiandao_return', window.location.origin);
+    const hash = new URLSearchParams();
+    hash.set('qiandao-account', marker);
+    hash.set('qiandao-return', window.location.origin);
+    url.hash = hash.toString();
+    return url.toString();
+  } catch (_) {
+    return `${baseUrl.replace(/\/+$/, '')}/login?qiandao_account=${encodeURIComponent(String(key || accountKey(acc)))}&qiandao_return=${encodeURIComponent(window.location.origin)}#qiandao-account=${encodeURIComponent(String(key || accountKey(acc)))}&qiandao-return=${encodeURIComponent(window.location.origin)}`;
+  }
+}
+
+function openAccountAuthRefreshSite(key) {
+  const acc = findAccountByKey(key);
+  if (!acc) return;
+  const targetUrl = buildAccountAuthRefreshUrl(acc, key);
+  if (!targetUrl) {
+    notify('bad2', '无法打开网站', '当前账号没有有效地址。');
+    return;
+  }
+  window.open(targetUrl, '_blank', 'noopener');
+  notify('warn2', '已打开目标登录页', 'qiandao 不会清除旧登录或自动填写密码。登录目标账号后，点击扩展里的“采集当前页”和“更新到本地并重新检测”。');
+}
 
 function normalizeBaseUrlInput(value) {
   let v = String(value || '').trim();
@@ -1905,13 +1940,24 @@ function pinMark(pinned, title = '已置顶') { return pinned ? `<span class="pi
 function groupPinned(group) { return sitePinned(group.baseUrl); }
 function siteCheckinMode(baseUrl) {
   const mode = String(siteInfoForBaseUrl(baseUrl).checkin_mode || 'auto').toLowerCase();
-  return ['auto', 'enabled', 'disabled'].includes(mode) ? mode : 'auto';
+  return ['enabled', 'manual', 'disabled'].includes(mode) ? mode : 'enabled';
 }
 function siteCheckinDisabled(baseUrl) { return siteCheckinMode(baseUrl) === 'disabled'; }
+function siteCheckinManual(baseUrl) { return siteCheckinMode(baseUrl) === 'manual'; }
+function siteManualSigninSigned(baseUrl) {
+  const group = getGroupByBaseUrl(baseUrl);
+  if (!group || !group.accounts.length) return false;
+  return group.accounts.some((acc) => (state.signinStatus[accountKey(acc)] || acc.signin_status) === '已签到');
+}
+function siteManualChip(baseUrl) {
+  if (!siteCheckinManual(baseUrl)) return '';
+  const signed = siteManualSigninSigned(baseUrl);
+  return `<span class="site-manual-chip ${signed ? 'signed' : ''}" title="手动签到：${signed ? '今日已标记签到' : '今日未标记签到'}"><span class="today-dot"></span>手动签到 · ${signed ? '今日已签到' : '今日未签到'}</span>`;
+}
 function updateSiteCheckinModeCache(baseUrl, mode) {
   const normalized = normalizeBaseUrlInput(baseUrl);
   if (!normalized) return;
-  const nextMode = ['auto', 'enabled', 'disabled'].includes(mode) ? mode : 'auto';
+  const nextMode = ['enabled', 'manual', 'disabled'].includes(mode) ? mode : 'enabled';
   state.siteInfo[normalized] = { ...(state.siteInfo[normalized] || {}), checkin_mode: nextMode };
 }
 function markSiteAccountsCheckinUnsupported(baseUrl) {
@@ -1935,7 +1981,7 @@ const SITE_COLOR_PRESETS = ['#d4af37', '#2f855a', '#355c7d', '#6b46c1', '#db2777
 
 function accountCheckinUnsupported(acc) {
   const baseUrl = normalizeBaseUrlInput(acc?.base_url || state.defaultBaseUrl);
-  if (isForcedUnsupportedCheckinSite(baseUrl) || siteCheckinDisabled(baseUrl)) return true;
+  if (isForcedUnsupportedCheckinSite(baseUrl) || siteCheckinDisabled(baseUrl) || siteCheckinManual(baseUrl)) return true;
   if (siteCheckinMode(baseUrl) === 'enabled') return false;
   if (siteHasDedicatedCheckin(baseUrl) || normalizeProvider(acc?.provider) === 'custom') return false;
   const key = accountKey(acc);
@@ -2018,7 +2064,7 @@ function renderGroupRow(group) {
           <button type="button" class="fold-btn" data-group-action="toggle" data-group-key="${key}" title="${collapsed ? '展开' : '折叠'}">
             <span class="fold-icon ${collapsed ? '' : 'expanded'}" aria-hidden="true"></span>
           </button>
-          <span class="group-url mono">${pinMark(pinned, '该地址已置顶')}${siteColor ? '<span class="site-color-dot" aria-hidden="true"></span> ' : ''}${group.baseUrl} ${specialInfo ? `<span class="site-special-chip">${escapeHtml(specialInfo)}</span>` : ''}</span>
+          <span class="group-url mono">${pinMark(pinned, '该地址已置顶')}${siteColor ? '<span class="site-color-dot" aria-hidden="true"></span> ' : ''}${group.baseUrl} ${specialInfo ? `<span class="site-special-chip">${escapeHtml(specialInfo)}</span>` : ''} ${siteManualChip(group.baseUrl)}</span>
           <span class="group-stats">
             <span class="group-stat">账号数 ${group.accounts.length}</span>
             <span class="group-stat">可用数 ${stats.valid}</span>
@@ -2525,7 +2571,7 @@ async function saveSiteInfo(baseUrl) {
   const remark = String(remarkNode?.value || '').trim();
   const specialInfo = String(specialNode?.value || '').trim();
   const displayColor = String(colorNode?.value || '').trim();
-  const checkinMode = ['auto', 'enabled', 'disabled'].includes(String(checkinModeNode?.value || 'auto')) ? String(checkinModeNode?.value || 'auto') : 'auto';
+  const checkinMode = ['enabled', 'manual', 'disabled'].includes(String(checkinModeNode?.value || 'enabled')) ? String(checkinModeNode?.value || 'enabled') : 'enabled';
   const pinned = !!siteInfoForBaseUrl(normalized).pinned;
   if (remark.length > 500) { notify('warn2', '备注过长', '地址备注不能超过 500 个字符。'); return; }
   if (specialInfo.length > 100) { notify('warn2', '特殊信息过长', '特殊信息不能超过 100 个字符。'); return; }
@@ -2538,7 +2584,7 @@ async function saveSiteInfo(baseUrl) {
     });
     state.siteInfo[normalized] = data.site || {};
     if ((data.site || {}).checkin_mode === 'disabled') markSiteAccountsCheckinUnsupported(normalized);
-    if ((data.site || {}).checkin_mode === 'enabled') clearSiteAccountsUnsupportedIfManualEnabled(normalized);
+    if ((data.site || {}).checkin_mode === 'enabled' || (data.site || {}).checkin_mode === 'manual') clearSiteAccountsUnsupportedIfManualEnabled(normalized);
     log(`${normalized} 地址信息已保存`, 'ok');
     notify('ok', '地址信息已保存', normalized);
   } finally {
@@ -2701,6 +2747,42 @@ async function refreshSiteModels(baseUrl, automatic = false) {
   }
 }
 
+async function detectSiteCheckinStatus(baseUrl) {
+  const normalized = normalizeBaseUrlInput(baseUrl);
+  if (!normalized) return;
+  state.siteLoading[normalized] = 'checkin-status';
+  renderDetail();
+  try {
+    const data = await api('/api/sites/checkin-status', { method: 'POST', body: JSON.stringify({ base_url: normalized }) });
+    state.siteInfo[normalized] = data.site || state.siteInfo[normalized] || {};
+    for (const acc of data.accounts || []) {
+      const key = accountKey(acc);
+      if (key) state.signinStatus[key] = acc.signin_status || state.signinStatus[key] || '未签到';
+    }
+    const mode = siteCheckinMode(normalized);
+    notify(mode === 'disabled' ? 'warn2' : 'ok', '签到状态检测完成', `${normalized}：${mode === 'disabled' ? '不可签到' : '可以签到'}。`);
+  } finally {
+    delete state.siteLoading[normalized];
+    await refreshAccounts();
+    state.selectedSite = normalized;
+    renderTable();
+    renderDetail();
+  }
+}
+
+async function toggleManualSignin(baseUrl) {
+  const normalized = normalizeBaseUrlInput(baseUrl);
+  const signed = !siteManualSigninSigned(normalized);
+  const data = await api('/api/sites/manual-signin', { method: 'POST', body: JSON.stringify({ base_url: normalized, signed }) });
+  for (const acc of data.accounts || []) {
+    const key = accountKey(acc);
+    if (key) state.signinStatus[key] = acc.signin_status || (signed ? '已签到' : '未签到');
+  }
+  notify('ok', signed ? '已标记今日已签到' : '已取消今日签到标记', normalized);
+  renderTable();
+  renderDetail();
+}
+
 function renderSiteDetail() {
   const baseUrl = state.selectedSite;
   const group = getGroupedAccounts().find((item) => item.baseUrl === baseUrl);
@@ -2748,6 +2830,7 @@ function renderSiteDetail() {
       <span class="hero-badge">可用数：${stats.valid}</span>
       <span class="hero-badge">今日签到：${signText}</span>
       ${specialInfo ? `<span class="site-special-chip">${escapeHtml(specialInfo)}</span>` : ''}
+      ${siteManualChip(baseUrl)}
     </div>
     <div class="metric-grid" style="margin-top:12px;">
       <div class="metric-card">
@@ -2781,17 +2864,25 @@ function renderSiteDetail() {
         </div>
       </div>
 
-      <div class="site-custom-grid" style="margin-top:9px;">
+      <div class="site-checkin-setting-grid">
         <div>
           <label>签到设置</label>
           <select data-site-checkin-mode>
-            <option value="auto" ${checkinMode === 'auto' ? 'selected' : ''}>自动检测</option>
             <option value="enabled" ${checkinMode === 'enabled' ? 'selected' : ''}>可以签到</option>
-            <option value="disabled" ${checkinMode === 'disabled' ? 'selected' : ''}>不签到</option>
+            <option value="manual" ${checkinMode === 'manual' ? 'selected' : ''}>手动签到</option>
+            <option value="disabled" ${checkinMode === 'disabled' ? 'selected' : ''}>不可签到</option>
           </select>
         </div>
-        <div class="small" style="align-self:center;">选择“不签到”后，该地址和下属账号会显示不可签到，并在签到时自动跳过。</div>
+        <div class="site-checkin-actions">
+          <button type="button" class="secondary" data-detect-site-checkin ${loading ? 'disabled' : ''}>${loading === 'checkin-status' ? '检测中' : '检测签到状态'}</button>
+        </div>
       </div>
+      ${checkinMode === 'manual' ? `<div class="manual-signin-card">
+        <div><div class="manual-title">手动签到</div></div>
+        <button type="button" class="manual-toggle-button ${siteManualSigninSigned(baseUrl) ? 'signed' : ''}" data-toggle-manual-signin>
+          <span class="manual-toggle-dot"></span>${siteManualSigninSigned(baseUrl) ? '今日已签到' : '标记今日已签到'}
+        </button>
+      </div>` : ''}
       <div class="site-color-preset-row">
         <button type="button" class="secondary" data-site-clear-color>清除颜色</button>
         ${SITE_COLOR_PRESETS.map((color) => `<button type="button" class="site-color-preset" data-site-color-preset="${color}" style="background:${color}" title="复用颜色 ${color}"></button>`).join('')}
@@ -2859,6 +2950,10 @@ function renderSiteDetail() {
   if (copySiteAddressButton) copySiteAddressButton.addEventListener('click', () => copyText(baseUrl, '地址已复制'));
   const sitePinButton = el.detailStatus.querySelector('[data-toggle-site-pin]');
   if (sitePinButton) sitePinButton.addEventListener('click', () => toggleSitePinned(baseUrl).catch((e) => notify('bad2', '地址置顶失败', e.message || String(e))));
+  const detectCheckinButton = el.detailStatus.querySelector('[data-detect-site-checkin]');
+  if (detectCheckinButton) detectCheckinButton.addEventListener('click', () => detectSiteCheckinStatus(baseUrl).catch((e) => notify('bad2', '签到状态检测失败', e.message || String(e))));
+  const manualSigninButton = el.detailStatus.querySelector('[data-toggle-manual-signin]');
+  if (manualSigninButton) manualSigninButton.addEventListener('click', () => toggleManualSignin(baseUrl).catch((e) => notify('bad2', '手动签到标记失败', e.message || String(e))));
   fitMetricValues();
   flashDetail();
 }
@@ -2882,6 +2977,7 @@ function renderDetail() {
   const acc = state.selected;
   const key = accountKey(acc);
   const sr = state.statusResults[key];
+  const currentStatusError = state.statusErrors[key] || (sr && !sr.session_valid ? sr : null);
   const signState = siteHasDedicatedCheckin(acc.base_url || state.defaultBaseUrl) && (state.signinStatus[key] || '未签到') === '不可签到'
     ? '未签到'
     : (state.signinStatus[key] || '未签到');
@@ -2940,7 +3036,16 @@ function renderDetail() {
       <textarea class="site-remark-editor" data-account-remark maxlength="500" placeholder="填写该账号的备注信息">${escapeHtml(acc.remark || '')}</textarea>
     </div>
     <div class="small" style="margin-top:12px;">上次检测时间：${prevTime}${sourceTip}</div>
-    ${sr && !sr.session_valid ? `<div class="small bad2" style="margin-top:8px; word-break:break-word;">异常信息：${sr.api_error || '接口返回异常'}<\/div>` : ''}
+    ${currentStatusError ? `
+      <div class="site-section auth-refresh-section">
+        <div class="site-section-head">
+          <div class="site-section-title">检测异常</div>
+          <button type="button" data-refresh-auth-site>打开网站更新登录</button>
+        </div>
+        <div class="small bad2" style="word-break:break-word;">异常信息：${escapeHtml(currentStatusError.api_error || '接口返回异常')}</div>
+        <div class="small" style="margin-top:6px;">打开后请在目标网站完成登录，再使用 qiandao 浏览器扩展更新当前账号并重新检测。</div>
+      </div>
+    ` : ''}
     <div id="token-panel" class="token-panel"></div>
   `;
   const copyAddressButton = el.detailStatus.querySelector('[data-copy-address]');
@@ -2949,6 +3054,8 @@ function renderDetail() {
   }
   const saveAccountRemarkButton = el.detailStatus.querySelector('[data-save-account-remark]');
   if (saveAccountRemarkButton) saveAccountRemarkButton.addEventListener('click', saveAccountRemark);
+  const refreshAuthButton = el.detailStatus.querySelector('[data-refresh-auth-site]');
+  if (refreshAuthButton) refreshAuthButton.addEventListener('click', () => openAccountAuthRefreshSite(key));
   fitMetricValues();
   flashDetail();
   fillForm(acc);
@@ -3000,6 +3107,13 @@ async function refreshAccounts() {
     const signinStatus = acc.signin_status || '未签到';
     state.signinStatus[key] = siteHasDedicatedCheckin(acc.base_url || state.defaultBaseUrl) && signinStatus === '不可签到' ? '未签到' : signinStatus;
     if (acc.last_status && typeof acc.last_status === 'object') state.statusResults[key] = acc.last_status;
+    if (acc.latest_status && typeof acc.latest_status === 'object') {
+      if (acc.latest_status.session_valid || acc.latest_status.status_state === 'VALID') {
+        state.statusResults[key] = acc.latest_status;
+      } else {
+        state.statusErrors[key] = acc.latest_status;
+      }
+    }
   }
   if (state.selected) state.selected = findAccountByKey(accountKey(state.selected));
   renderTable();
@@ -3024,12 +3138,12 @@ async function withGlobalBusy(text, button, busyText, fn) {
   if (state.pendingGlobal) return;
   state.pendingGlobal = true;
   setButtonBusy(button, true, busyText);
-  for (const btn of [el.btnRefresh, el.btnCheckinAll, el.btnStatusAll, el.btnNew, el.btnSortAsc, el.btnSortDesc]) if (btn && btn !== button) btn.disabled = true;
+  for (const btn of [el.btnRefresh, el.btnCheckinAll, el.btnStatusAll, el.btnNew]) if (btn && btn !== button) btn.disabled = true;
   setBusyText(`正在执行：${text}`);
   try { await fn(); } finally {
     state.pendingGlobal = false;
     setButtonBusy(button, false);
-    for (const btn of [el.btnRefresh, el.btnCheckinAll, el.btnStatusAll, el.btnNew, el.btnSortAsc, el.btnSortDesc]) if (btn && btn !== button) btn.disabled = false;
+    for (const btn of [el.btnRefresh, el.btnCheckinAll, el.btnStatusAll, el.btnNew]) if (btn && btn !== button) btn.disabled = false;
     setBusyText('');
   }
 }
@@ -3248,68 +3362,6 @@ async function runGroupStatus(group) {
   notify('ok', '地址检测完成', `${group.baseUrl} 已执行完成。`);
 }
 
-function getAccountGroupSortValue(acc) {
-  const key = accountKey(acc);
-  const sr = state.statusResults[key] || acc.last_status || {};
-  const identity = sr.identity || {};
-  const candidates = [
-    sr.group, sr.group_name, sr.user_group, sr.user_group_name, sr.group_id,
-    identity.group, identity.group_name, identity.user_group, identity.user_group_name, identity.group_id,
-    acc.group, acc.group_name, acc.user_group,
-  ];
-  for (const item of candidates) {
-    const value = String(item ?? '').trim();
-    if (value) return value;
-  }
-  return '默认';
-}
-
-function compareAccountsForSort(a, b, indexMap) {
-  const dir = state.sortDir === 'desc' ? -1 : 1;
-  if (state.sortField === 'group') {
-    const ag = getAccountGroupSortValue(a);
-    const bg = getAccountGroupSortValue(b);
-    const aDefault = ag === '默认';
-    const bDefault = bg === '默认';
-    if (aDefault !== bDefault) return aDefault ? -1 : 1;
-    const groupCmp = ag.localeCompare(bg, 'zh-CN', { numeric: true, sensitivity: 'base' });
-    if (groupCmp) return groupCmp * dir;
-  }
-  if (state.sortField === 'quota') {
-    const av = getAccountQuotaMoney(a);
-    const bv = getAccountQuotaMoney(b);
-    const aOk = Number.isFinite(av);
-    const bOk = Number.isFinite(bv);
-    if (aOk && bOk && av !== bv) return (av - bv) * dir;
-    if (aOk !== bOk) return aOk ? -1 : 1;
-  }
-  return (indexMap.get(accountKey(a)) || 0) - (indexMap.get(accountKey(b)) || 0);
-}
-
-async function applyTopSort(direction = state.sortDir) {
-  state.sortField = el.sortField.value || 'group';
-  state.sortDir = direction === 'desc' ? 'desc' : 'asc';
-  if (state.sortField === 'quota' && !state.accounts.some((acc) => Number.isFinite(getAccountQuotaMoney(acc)))) {
-    notify('warn2', '缺少额度数据', '请先执行全部检测或账号检测，再按额度排序。');
-    return;
-  }
-  const indexMap = new Map(state.accounts.map((acc, index) => [accountKey(acc), index]));
-  state.accounts = [...state.accounts].sort((a, b) => compareAccountsForSort(a, b, indexMap));
-  renderTable();
-  try {
-    await api('/api/accounts/reorder', {
-      method: 'POST',
-      body: JSON.stringify({ ordered_ids: state.accounts.map((acc) => Number(acc.account_index)) })
-    });
-    const label = state.sortField === 'quota' ? '额度' : '分组';
-    notify('ok', '排序已更新', `${label} 已按${state.sortDir === 'asc' ? '升序' : '降序'}排列。`);
-    log(`排序已更新：${label} ${state.sortDir === 'asc' ? '升序' : '降序'}`, 'ok');
-  } catch (e) {
-    notify('bad2', '排序失败', e.message || String(e));
-    log(`排序失败：${e.message || e}`, 'bad2');
-    await refreshAccounts();
-  }
-}
 async function toggleSitePinned(baseUrl) {
   const normalized = normalizeBaseUrlInput(baseUrl);
   const info = state.siteInfo[normalized] || {};
@@ -3498,15 +3550,10 @@ el.btnStatusAll.addEventListener('click', () => withGlobalBusy('全部检测', e
   renderDetail();
 }).catch(e => log(e.message, 'bad2')));
 
-el.sortField.addEventListener('change', () => {
-  state.sortField = el.sortField.value || 'group';
-});
 el.accountFilter.addEventListener('input', () => {
   state.accountFilter = el.accountFilter.value || '';
   renderTable();
 });
-el.btnSortAsc.addEventListener('click', () => withGlobalBusy('账号排序', el.btnSortAsc, '升序中', () => applyTopSort('asc')).catch(e => log(e.message, 'bad2')));
-el.btnSortDesc.addEventListener('click', () => withGlobalBusy('账号排序', el.btnSortDesc, '降序中', () => applyTopSort('desc')).catch(e => log(e.message, 'bad2')));
 
 document.getElementById('btn-new').addEventListener('click', () => openAddModal());
 document.getElementById('btn-save').addEventListener('click', () => withGlobalBusy('保存账号', document.getElementById('btn-save'), '保存中', saveForm).catch(e => log(e.message, 'bad2')));
@@ -3600,6 +3647,24 @@ for (const toggle of document.querySelectorAll('.combo-toggle')) {
 document.addEventListener('mousedown', (e) => {
   if (!e.target.closest('.combo-wrap')) hideComboLists();
 });
+window.addEventListener('message', (event) => {
+  if (event.origin !== window.location.origin) return;
+  const message = event.data || {};
+  if (message.type !== 'qiandao-auth-refreshed') return;
+  const detail = message.detail || {};
+  const key = String(detail.accountIndex || '');
+  refreshAccounts()
+    .then(() => {
+      if (key) selectAccount(key);
+      const result = detail.result || {};
+      if (result.session_valid || result.status_state === 'VALID') {
+        notify('ok', '账号已更新', `${accountLabel(key)} 登录信息已更新，检测成功。`);
+      } else {
+        notify('warn2', '账号已更新', `${accountLabel(key)} 登录信息已更新，但检测仍异常：${result.api_error || '接口返回异常'}`);
+      }
+    })
+    .catch((e) => notify('bad2', '刷新失败', e.message || String(e)));
+});
 bindBaseUrlNormalizer(el.fBaseUrl);
 bindBaseUrlNormalizer(el.mBaseUrl);
 bindProviderCombo(el.fProvider);
@@ -3612,7 +3677,7 @@ fillForm(null);
 refreshAccounts()
   .then(() => {
     log('页面已就绪', 'ok');
-    notify('ok', '页面已就绪', '可以直接选择账号、拖动排序、签到或检测余额变化。');
+    notify('ok', '页面已就绪', '可以直接选择账号、拖动调整顺序、签到或检测余额变化。');
   })
   .catch(e => log(e.message, 'bad2'));
 </script>

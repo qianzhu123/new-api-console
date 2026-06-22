@@ -7,12 +7,16 @@ const els = {
   userIdText: document.getElementById('userIdText'),
   sessionText: document.getElementById('sessionText'),
   collectBtn: document.getElementById('collectBtn'),
+  updateLocalBtn: document.getElementById('updateLocalBtn'),
   copyBtn: document.getElementById('copyBtn'),
   downloadBtn: document.getElementById('downloadBtn'),
   jsonOutput: document.getElementById('jsonOutput')
 };
 
 let lastJsonText = '';
+let lastRefreshTarget = null;
+
+const LOCAL_QIANDAO_ORIGIN = 'http://127.0.0.1:5050';
 
 const NEW_API_SELF_PATHS = [
   '/api/user/self',
@@ -37,6 +41,44 @@ function normalizeOrigin(url) {
   } catch (_) {
     return '';
   }
+}
+
+function refreshTargetFromUrl(url) {
+  try {
+    const parsed = new URL(url);
+    const rawHash = parsed.hash.replace(/^#/, '').replace(/^\?/, '');
+    const hashParams = new URLSearchParams(rawHash);
+    const searchParams = parsed.searchParams;
+    const accountIndex = String(
+      hashParams.get('qiandao-account')
+      || hashParams.get('qiandao_account')
+      || searchParams.get('qiandao-account')
+      || searchParams.get('qiandao_account')
+      || hashParams.get('account_index')
+      || searchParams.get('account_index')
+      || ''
+    ).trim();
+    if (!/^\d+$/.test(accountIndex)) return null;
+    return {
+      accountIndex,
+      returnUrl: hashParams.get('qiandao-return') || hashParams.get('qiandao_return') || searchParams.get('qiandao-return') || searchParams.get('qiandao_return') || LOCAL_QIANDAO_ORIGIN
+    };
+  } catch (_) {
+    return null;
+  }
+}
+
+function loginUrlForTarget(url, target) {
+  const parsed = new URL(url);
+  parsed.pathname = '/login';
+  parsed.search = '';
+  parsed.searchParams.set('qiandao_account', target.accountIndex);
+  parsed.searchParams.set('qiandao_return', target.returnUrl || LOCAL_QIANDAO_ORIGIN);
+  const hash = new URLSearchParams();
+  hash.set('qiandao-account', target.accountIndex);
+  hash.set('qiandao-return', target.returnUrl || LOCAL_QIANDAO_ORIGIN);
+  parsed.hash = hash.toString();
+  return parsed.toString();
 }
 
 function normalizeCookieDomain(domain) {
@@ -334,6 +376,7 @@ async function inferAndEnrich(tabId, output) {
 async function collect() {
   setStatus('正在采集当前标签页...', '');
   els.collectBtn.disabled = true;
+  els.updateLocalBtn.disabled = true;
   els.copyBtn.disabled = true;
   els.downloadBtn.disabled = true;
 
@@ -345,6 +388,7 @@ async function collect() {
     if (!/^https?:\/\//i.test(tab.url)) {
       throw new Error('请在 http/https 网站页面使用本扩展');
     }
+    lastRefreshTarget = refreshTargetFromUrl(tab.url);
 
     const page = await collectPageStorage(tab.id);
     if (!page) throw new Error('无法读取当前页面 storage，请刷新页面后重试');
@@ -400,9 +444,11 @@ async function collect() {
     } else if (summary.provider === 'new-api' && !summary.userId) {
       setStatus('已读取 new-api session，但没有识别到 new_api_user。可以复制 JSON 后在导入表单中手动补用户 ID。', 'warn');
     } else {
-      setStatus(`采集成功：已识别 ${summary.provider}，导入 JSON 已包含所需字段。`, 'ok');
+      const refreshHint = lastRefreshTarget ? ` 可直接更新本地账号 #${lastRefreshTarget.accountIndex} 并重新检测。` : '';
+      setStatus(`采集成功：已识别 ${summary.provider}，导入 JSON 已包含所需字段。${refreshHint}`, 'ok');
     }
 
+    els.updateLocalBtn.disabled = !summary.hasSession;
     els.copyBtn.disabled = false;
     els.downloadBtn.disabled = false;
   } catch (err) {
@@ -436,10 +482,69 @@ function downloadJson() {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
+async function notifyQiandaoTabs(accountIndex, data) {
+  const targets = await chrome.tabs.query({
+    url: [
+      `${LOCAL_QIANDAO_ORIGIN}/*`,
+      'http://localhost:5050/*'
+    ]
+  });
+  await Promise.all(targets
+    .filter(tab => tab.id)
+    .map(tab => chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      func: (detail) => {
+        window.postMessage({ type: 'qiandao-auth-refreshed', detail }, window.location.origin);
+      },
+      args: [{ accountIndex, result: data.result || {}, account: data.account || null }]
+    }).catch(() => null)));
+}
+
+async function refreshLocalAccount() {
+  try {
+    if (!lastJsonText) {
+      throw new Error('请先采集当前页。');
+    }
+    els.updateLocalBtn.disabled = true;
+    setStatus('正在按网站地址和用户 ID 同步账号...', '');
+    const response = await fetch(`${LOCAL_QIANDAO_ORIGIN}/api/auth/sync-account`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ json: lastJsonText })
+    });
+    const data = await response.json().catch(() => ({ ok: false, error: `HTTP ${response.status}` }));
+    if (!response.ok || data.ok === false) {
+      throw new Error(data.error || `HTTP ${response.status}`);
+    }
+
+    const accountIndex = String(data.account?.account_index || '');
+    await notifyQiandaoTabs(accountIndex, data);
+    const result = data.result || {};
+    const action = data.created ? '已创建账号并执行签到、检测' : '已更新现有账号并重新检测';
+    const suffix = result.session_valid || result.status_state === 'VALID' ? '检测成功。' : `检测仍异常：${result.api_error || '接口返回异常'}。`;
+    setStatus(`${action} #${accountIndex}，${suffix}`, result.session_valid ? 'ok' : 'warn');
+  } catch (err) {
+    setStatus(`更新失败：${err.message || err}`, 'err');
+  } finally {
+    els.updateLocalBtn.disabled = !lastJsonText;
+  }
+}
+
+async function initializeRefreshTargetState() {
+  const tab = await getActiveTab().catch(() => null);
+  lastRefreshTarget = refreshTargetFromUrl(tab?.url || '');
+  els.updateLocalBtn.disabled = true;
+  if (lastRefreshTarget) {
+    setStatus(`已识别 qiandao 账号 #${lastRefreshTarget.accountIndex}。登录目标账号后采集并更新到本地。`, 'warn');
+  }
+}
+
 els.collectBtn.addEventListener('click', collect);
+els.updateLocalBtn.addEventListener('click', refreshLocalAccount);
 els.copyBtn.addEventListener('click', copyJson);
 els.downloadBtn.addEventListener('click', downloadJson);
 
 document.addEventListener('DOMContentLoaded', () => {
   setStatus('打开已登录的 new-api/sub2api 页面后，点击“采集当前页”。');
+  initializeRefreshTargetState().catch(() => {});
 });

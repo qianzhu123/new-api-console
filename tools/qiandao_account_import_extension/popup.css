@@ -117,6 +117,15 @@ button.primary:hover:not(:disabled) {
   background: #1d4ed8;
 }
 
+button.success {
+  background: #15803d;
+  border-color: #22c55e;
+}
+
+button.success:hover:not(:disabled) {
+  background: #166534;
+}
+
 textarea {
   width: 100%;
   min-height: 210px;

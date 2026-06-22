@@ -149,12 +149,20 @@ run_web.bat
 - Address action `删除`: delete the address group and all accounts under it after confirmation.
 - Address detail `提交修改`: save address remarks, special info, display color, and sign-in mode together.
 - Row action `检测`: run single-account check.
+- When a single-account check is abnormal, the account detail panel shows `打开网站更新登录`; it opens the account site with a `qiandao-account` marker so the browser extension can update that exact local account and immediately re-check it.
 - `添加令牌`: create a token after token groups are loaded.
 - `刷新令牌`: force-refresh token groups and token metadata from the remote site.
 - `添加账号` -> `JSON 导入添加`: paste a captured JSON or Cookie Editor exported Cookie JSON, then click `从 JSON 解析并回填`. The site URL is read from JSON `origin`/`page`/`url`, or from cookie `domain`; no extra URL field is required.
 - Recommended collector: install the Chrome/Edge extension under `tools/qiandao_account_import_extension`. It reads current-page `localStorage`, current-site cookies through the browser extension cookies API, and tries new-api/sub2api self endpoints to complete missing identity fields. It can export HttpOnly `session` cookies that normal page JavaScript/Tampermonkey cannot read.
 - For `sub2api`, the JSON must contain a complete non-redacted `localStorage.auth_token`; `auth_user` is used to fill the account name.
 - For `new-api`, the JSON should contain user identity plus a complete `session` cookie. The extension can produce this directly on the logged-in site.
+
+## Performance Tuning
+
+- Batch sign-in and status checks run in parallel.
+- `QIANDAO_MAX_BATCH_WORKERS` controls max concurrent account/site requests; default is `24`.
+- `QIANDAO_TIMEOUT_SECONDS` controls each HTTP request timeout; default is `10`.
+- `QIANDAO_HTTP_RETRY_ATTEMPTS` controls retry attempts for self-info requests; default is `2`.
 
 ### Browser extension collector
 
@@ -171,6 +179,15 @@ Usage:
 ```text
 Open logged-in new-api/sub2api site -> click qiandao extension -> 采集当前页 -> 复制导入 JSON -> paste into qiandao JSON import
 ```
+
+Abnormal-account recovery:
+
+```text
+qiandao account detail -> 打开网站更新登录 -> login on the target site -> qiandao extension -> 采集当前页 -> 更新到本地并重新检测
+```
+
+`更新到本地并重新检测` matches existing accounts by normalized site address plus `new_api_user`. Existing accounts are updated and checked; new accounts are added, signed in once, and checked once.
+qiandao does not store site passwords and will not auto-fill passwords; use the browser's own saved-password/autofill behavior if available.
 
 The extension only targets `new-api` and `sub2api` import fields. It displays the detected site, provider, account name, user ID, and session source, then generates JSON that can be pasted directly into the add-account JSON import box. Exported JSON contains login credentials (`session` or Bearer token), so keep it private.
 

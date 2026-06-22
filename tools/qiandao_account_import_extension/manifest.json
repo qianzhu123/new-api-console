@@ -12,7 +12,8 @@
     "activeTab",
     "scripting",
     "cookies",
-    "clipboardWrite"
+    "clipboardWrite",
+    "tabs"
   ],
   "host_permissions": [
     "http://*/*",

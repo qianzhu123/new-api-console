@@ -47,7 +47,7 @@
 | 文件 | 具体功能 |
 | --- | --- |
 | `tools/session_import_collector.user.js` | Tampermonkey 采集脚本：读取当前页面地址、localStorage、sessionStorage 和页面可见 Cookie，可合并 Cookie Editor JSON。不能直接读取 HttpOnly Cookie。 |
-| `tools/qiandao_account_import_extension/manifest.json` | Chrome/Edge Manifest V3 配置，声明 cookies、scripting、activeTab、clipboardWrite 权限和站点访问权限。 |
+| `tools/qiandao_account_import_extension/manifest.json` | Chrome/Edge Manifest V3 配置，声明 cookies、scripting、activeTab、clipboardWrite、tabs 权限和站点访问权限。 |
 | `tools/qiandao_account_import_extension/popup.html` | 浏览器扩展弹窗结构。 |
 | `tools/qiandao_account_import_extension/popup.css` | 浏览器扩展弹窗样式。 |
 | `tools/qiandao_account_import_extension/popup.js` | 扩展采集逻辑：读取当前标签页存储与 Cookie、识别 new-api/sub2api、调用自信息接口补全身份、复制或下载导入 JSON。 |
@@ -148,11 +148,14 @@
 - 余额/账号状态：`check_status`。
 - 不可签到：`checkin_response_unsupported`、`is_forced_unsupported_checkin_site`；当前逻辑只把本账号的当天签到状态设为 `不可签到`，不会自动扩散到同地址其他账号。
 - 检测失败缓存：`set_status_cache` 只保存成功检测结果；前端会用 `statusErrors` 显示当前异常，同时右侧详情保留 `statusResults` / `last_status` 中的最后成功结果。
+- 异常登录恢复：`POST /api/accounts/<account_index>/refresh-auth` 解析扩展采集 JSON，按账号序号更新同地址账号的登录信息，然后立即调用 `check_status` 重新检测。
+- 扩展自动同步：`POST /api/auth/sync-account` 优先按地址和 `new_api_user` 匹配；已有账号更新并检测，新账号创建后签到并检测。
 - 路由：
   - `POST /api/accounts/<account_index>/checkin`
   - `POST /api/accounts/checkin-all`
   - `POST /api/accounts/<account_index>/status`
   - `POST /api/accounts/status-all`
+  - `POST /api/accounts/<account_index>/refresh-auth`
 
 ### 令牌管理
 
@@ -200,6 +203,7 @@
 
 - 账号表格：`renderTable`、`renderRow`、`renderGroupRow`。
 - 单账号详情：`renderDetail`。
+- 检测异常恢复：`buildAccountAuthRefreshUrl`、`openAccountAuthRefreshSite`，以及 `qiandao-auth-refreshed` message listener。
 - 地址详情：`renderSiteDetail`。
 - 单击地址/双击折叠：`selectSite` 和分组行事件。
 - 新增/编辑账号：`openAddModal`、`resetModalForm`、`buildPayloadFromInputs`、`validatePayload`、`fillForm`、`saveForm`、`saveNewAccount`。

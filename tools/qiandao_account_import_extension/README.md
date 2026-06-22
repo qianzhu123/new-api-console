@@ -28,6 +28,8 @@ D:\code\myweb\qiandao\tools\qiandao_account_import_extension
 
 ## 使用方式
 
+### 普通导入
+
 1. 打开并登录目标 new-api/sub2api 网站。
 2. 点击浏览器工具栏里的 `qiandao 导入` 扩展图标。
 3. 点击“采集当前页”。
@@ -43,6 +45,23 @@ D:\code\myweb\qiandao\tools\qiandao_account_import_extension
 ```text
 添加账号 -> JSON 导入添加 -> 粘贴 -> 从 JSON 解析并回填 -> 创建账号
 ```
+
+### 检测异常后更新本地账号
+
+1. 在 qiandao 右侧账号详情中点击 `打开网站更新登录`。
+2. 在打开的目标网站登录目标账号。
+3. 点击浏览器工具栏里的 `qiandao 导入` 扩展图标。
+4. 点击“采集当前页”。
+5. 如果识别成功，点击“更新到本地并重新检测”。
+
+这个流程会调用本地 qiandao 的 `/api/auth/sync-account`，优先按“网站地址 + `new_api_user`”匹配账号：
+
+- 已存在：更新 session/token、账号信息并执行检测。
+- 不存在：自动添加账号，然后执行一次签到和一次检测。
+
+不再要求输入本地账号序号；如果没有 `new_api_user`，后端才会回退到网站地址和账号名匹配。
+
+qiandao 不保存目标网站密码，也不会自动填写密码；如果浏览器自身保存了密码，可以使用浏览器自动填充。
 
 ## 导出内容
 
