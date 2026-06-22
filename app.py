@@ -933,6 +933,7 @@ def get_site_info(base_url: str) -> dict[str, Any]:
         "display_color": normalize_site_color(entry.get("display_color")),
         "pinned": bool(entry.get("pinned", False)),
         "checkin_mode": checkin_mode,
+        "daily_signin_marked": site_daily_signin_marked(normalized_url),
         "models": [str(model) for model in models if str(model).strip()] if isinstance(models, list) else [],
         "models_loaded": isinstance(models, list),
         "models_failed": bool(entry.get("models_failed")),
@@ -2917,13 +2918,25 @@ def delete_account(account_index: int):
 
 def site_accounts_for_base_url(base_url: str) -> list[dict[str, Any]]:
     normalized = normalize_base_url(base_url)
-    cfg = load_config()
+    cfg = load_config(normalize_and_persist=False)
     default_base_url = normalize_base_url(str(cfg.get("base_url") or get_base_url()))
     return [
         account
         for account in cfg.get("accounts", [])
         if normalize_base_url(str(account.get("base_url") or default_base_url)) == normalized
     ]
+
+
+def site_daily_signin_marked(base_url: str) -> bool:
+    accounts = site_accounts_for_base_url(base_url)
+    if not accounts:
+        return False
+    for account in accounts:
+        account_index = int(account.get("account_index", 0) or 0)
+        runtime_key = str(account_index) if account_index > 0 else str(account.get("name") or "")
+        if not runtime_key or get_signin_status_today(runtime_key) != "已签到":
+            return False
+    return True
 
 
 def set_site_signin_status_today(base_url: str, status: str) -> None:
@@ -3310,9 +3323,7 @@ def site_info():
     if display_color and not normalize_site_color(display_color):
         return jsonify({"ok": False, "error": "display_color must be a hex color like #ff8800"}), 400
     site = update_site_info(base_url, remark=remark, special_info=special_info, display_color=display_color, pinned=pinned, checkin_mode=checkin_mode)
-    if has_checkin_mode and site.get("checkin_mode") == "disabled":
-        set_site_signin_status_today(base_url, "不可签到")
-    elif has_checkin_mode and site.get("checkin_mode") in ("enabled", "manual"):
+    if has_checkin_mode and site.get("checkin_mode") in ("enabled", "manual"):
         clear_site_signin_status_today(base_url, only_status="不可签到")
     return jsonify({"ok": True, "site": site, "accounts": build_public_accounts(load_config(normalize_and_persist=False).get("accounts", []))})
 
@@ -3324,11 +3335,14 @@ def site_manual_signin():
     signed = bool(payload.get("signed", False)) if isinstance(payload, dict) else False
     if not base_url:
         return jsonify({"ok": False, "error": "base_url is required"}), 400
-    site = update_site_info(base_url, checkin_mode="manual")
+    accounts = site_accounts_for_base_url(base_url)
+    if not accounts:
+        return jsonify({"ok": False, "error": "site has no accounts"}), 404
     if signed:
         set_site_signin_status_today(base_url, "已签到")
     else:
         clear_site_signin_status_today(base_url, only_status="已签到")
+    site = get_site_info(base_url)
     return jsonify({"ok": True, "site": site, "accounts": build_public_accounts(load_config().get("accounts", []))})
 
 

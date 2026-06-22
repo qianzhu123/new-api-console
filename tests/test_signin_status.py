@@ -464,6 +464,74 @@ def test_status_failure_persists_latest_error_while_preserving_last_success(tmp_
     assert account["latest_status"]["status_state"] == "API_ERROR"
 
 
+def test_manual_marker_for_forced_unsupported_site_preserves_mode_and_public_status(tmp_path, monkeypatch):
+    monkeypatch.setattr(app, "CONFIG_PATH", tmp_path / "session.json")
+    monkeypatch.setattr(app, "SIGNIN_PATH", tmp_path / "signin_status.json")
+    monkeypatch.setattr(app, "STATUS_CACHE_PATH", tmp_path / "status_cache.json")
+    monkeypatch.setattr(app, "SITE_INFO_PATH", tmp_path / "site_info.json")
+    base_url = "https://api.e2ez.com"
+    write_json(
+        app.CONFIG_PATH,
+        {
+            "accounts": [
+                {
+                    "account_index": 7,
+                    "name": "forced manual",
+                    "enabled": True,
+                    "base_url": base_url,
+                    "new_api_user": "7",
+                    "session": "session-value-that-is-long-enough",
+                    "api_keys": [],
+                }
+            ]
+        },
+    )
+    write_json(app.SITE_INFO_PATH, {"sites": {base_url: {"checkin_mode": "manual"}}})
+
+    with app.app.test_client() as client:
+        response = client.post("/api/sites/manual-signin", json={"base_url": base_url, "signed": True})
+        accounts_response = client.get("/api/accounts")
+
+    assert response.status_code == 200
+    assert response.get_json()["site"]["checkin_mode"] == "manual"
+    assert response.get_json()["site"]["daily_signin_marked"] is True
+    assert accounts_response.get_json()["accounts"][0]["signin_status"] == UNSUPPORTED
+
+
+def test_manual_marker_for_disabled_site_preserves_mode_and_public_status(tmp_path, monkeypatch):
+    monkeypatch.setattr(app, "CONFIG_PATH", tmp_path / "session.json")
+    monkeypatch.setattr(app, "SIGNIN_PATH", tmp_path / "signin_status.json")
+    monkeypatch.setattr(app, "STATUS_CACHE_PATH", tmp_path / "status_cache.json")
+    monkeypatch.setattr(app, "SITE_INFO_PATH", tmp_path / "site_info.json")
+    base_url = "https://disabled.example.test"
+    write_json(
+        app.CONFIG_PATH,
+        {
+            "accounts": [
+                {
+                    "account_index": 8,
+                    "name": "disabled account",
+                    "enabled": True,
+                    "base_url": base_url,
+                    "new_api_user": "8",
+                    "session": "another-session-value-long-enough",
+                    "api_keys": [],
+                }
+            ]
+        },
+    )
+    write_json(app.SITE_INFO_PATH, {"sites": {base_url: {"checkin_mode": "disabled"}}})
+
+    with app.app.test_client() as client:
+        response = client.post("/api/sites/manual-signin", json={"base_url": base_url, "signed": True})
+        site_response = client.get("/api/sites/info", query_string={"base_url": base_url})
+
+    assert response.status_code == 200
+    assert response.get_json()["site"]["checkin_mode"] == "disabled"
+    assert site_response.get_json()["site"]["daily_signin_marked"] is True
+    assert response.get_json()["accounts"][0]["signin_status"] == UNSUPPORTED
+
+
 def test_frontend_disables_unsupported_group_checkin_and_uses_chevron_icon():
     template = (app.ROOT / "templates" / "index.html").read_text(encoding="utf-8")
 
