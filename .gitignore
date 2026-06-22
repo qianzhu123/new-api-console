@@ -20,6 +20,7 @@ run_web.exe
 *.spec
 
 # Tool/generated temporary files
+.worktrees/
 .pytest_cache/
 .__script_to_exe_*.bat
 _ai_*.py
