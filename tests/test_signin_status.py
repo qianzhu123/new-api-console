@@ -532,6 +532,179 @@ def test_manual_marker_for_disabled_site_preserves_mode_and_public_status(tmp_pa
     assert response.get_json()["accounts"][0]["signin_status"] == UNSUPPORTED
 
 
+def test_manual_marker_for_manual_site_preserves_public_unsupported_status(tmp_path, monkeypatch):
+    monkeypatch.setattr(app, "CONFIG_PATH", tmp_path / "session.json")
+    monkeypatch.setattr(app, "SIGNIN_PATH", tmp_path / "signin_status.json")
+    monkeypatch.setattr(app, "STATUS_CACHE_PATH", tmp_path / "status_cache.json")
+    monkeypatch.setattr(app, "SITE_INFO_PATH", tmp_path / "site_info.json")
+    base_url = "https://manual.example.test"
+    write_json(
+        app.CONFIG_PATH,
+        {
+            "accounts": [
+                {
+                    "account_index": 9,
+                    "name": "manual account",
+                    "enabled": True,
+                    "base_url": base_url,
+                    "new_api_user": "9",
+                    "session": "manual-session-value-long-enough",
+                    "api_keys": [],
+                }
+            ]
+        },
+    )
+    write_json(app.SITE_INFO_PATH, {"sites": {base_url: {"checkin_mode": "manual"}}})
+
+    with app.app.test_client() as client:
+        response = client.post("/api/sites/manual-signin", json={"base_url": base_url, "signed": True})
+
+    assert response.status_code == 200
+    assert response.get_json()["site"]["daily_signin_marked"] is True
+    assert response.get_json()["accounts"][0]["signin_status"] == UNSUPPORTED
+
+
+def test_site_daily_signin_marker_requires_every_site_account_signed(tmp_path, monkeypatch):
+    monkeypatch.setattr(app, "CONFIG_PATH", tmp_path / "session.json")
+    monkeypatch.setattr(app, "SIGNIN_PATH", tmp_path / "signin_status.json")
+    monkeypatch.setattr(app, "STATUS_CACHE_PATH", tmp_path / "status_cache.json")
+    monkeypatch.setattr(app, "SITE_INFO_PATH", tmp_path / "site_info.json")
+    base_url = "https://multi.example.test"
+    write_json(
+        app.CONFIG_PATH,
+        {
+            "accounts": [
+                {"account_index": 11, "name": "first", "enabled": True, "base_url": base_url},
+                {"account_index": 12, "name": "second", "enabled": True, "base_url": base_url},
+            ]
+        },
+    )
+
+    assert app.site_daily_signin_marked(base_url) is False
+
+    app.set_signin_status_today("11", SIGNED)
+
+    assert app.site_daily_signin_marked(base_url) is False
+
+    app.set_signin_status_today("12", SIGNED)
+
+    assert app.site_daily_signin_marked(base_url) is True
+
+
+def test_site_manual_signin_rejects_empty_site(tmp_path, monkeypatch):
+    monkeypatch.setattr(app, "CONFIG_PATH", tmp_path / "session.json")
+    monkeypatch.setattr(app, "SIGNIN_PATH", tmp_path / "signin_status.json")
+    monkeypatch.setattr(app, "STATUS_CACHE_PATH", tmp_path / "status_cache.json")
+    monkeypatch.setattr(app, "SITE_INFO_PATH", tmp_path / "site_info.json")
+    write_json(app.CONFIG_PATH, {"accounts": []})
+
+    with app.app.test_client() as client:
+        response = client.post("/api/sites/manual-signin", json={"base_url": "https://empty.example.test", "signed": True})
+
+    assert response.status_code == 404
+    assert response.get_json()["error"] == "site has no accounts"
+
+
+def test_site_manual_signin_unmark_clears_only_signed_marker(tmp_path, monkeypatch):
+    monkeypatch.setattr(app, "CONFIG_PATH", tmp_path / "session.json")
+    monkeypatch.setattr(app, "SIGNIN_PATH", tmp_path / "signin_status.json")
+    monkeypatch.setattr(app, "STATUS_CACHE_PATH", tmp_path / "status_cache.json")
+    monkeypatch.setattr(app, "SITE_INFO_PATH", tmp_path / "site_info.json")
+    base_url = "https://unmark.example.test"
+    write_json(
+        app.CONFIG_PATH,
+        {
+            "accounts": [
+                {"account_index": 21, "name": "signed", "enabled": True, "base_url": base_url},
+                {"account_index": 22, "name": "unsupported", "enabled": True, "base_url": base_url},
+            ]
+        },
+    )
+    app.set_signin_status_today("21", SIGNED)
+    app.set_signin_status_today("22", UNSUPPORTED)
+
+    with app.app.test_client() as client:
+        response = client.post("/api/sites/manual-signin", json={"base_url": base_url, "signed": False})
+
+    assert response.status_code == 200
+    assert response.get_json()["site"]["daily_signin_marked"] is False
+    assert app.get_signin_status_today("21") == UNSIGNED
+    assert app.get_signin_status_today("22") == UNSUPPORTED
+
+
+def test_site_checkin_status_preserves_explicit_manual_mode_and_daily_marker(tmp_path, monkeypatch):
+    monkeypatch.setattr(app, "CONFIG_PATH", tmp_path / "session.json")
+    monkeypatch.setattr(app, "SIGNIN_PATH", tmp_path / "signin_status.json")
+    monkeypatch.setattr(app, "STATUS_CACHE_PATH", tmp_path / "status_cache.json")
+    monkeypatch.setattr(app, "SITE_INFO_PATH", tmp_path / "site_info.json")
+    base_url = "https://manual-detect.example.test"
+    write_json(
+        app.CONFIG_PATH,
+        {
+            "accounts": [
+                {"account_index": 31, "name": "manual", "enabled": True, "base_url": base_url},
+            ]
+        },
+    )
+    write_json(app.SITE_INFO_PATH, {"sites": {base_url: {"checkin_mode": "manual"}}})
+    app.set_signin_status_today("31", SIGNED)
+    monkeypatch.setattr(app, "fetch_public_status", lambda base_url=None: {"ok": True, "checkin_enabled": False})
+
+    with app.app.test_client() as client:
+        response = client.post("/api/sites/checkin-status", json={"base_url": base_url})
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["site"]["checkin_mode"] == "manual"
+    assert payload["site"]["daily_signin_marked"] is True
+    assert app.get_signin_status_today("31") == SIGNED
+
+
+def test_site_checkin_status_preserves_explicit_disabled_mode_and_daily_marker(tmp_path, monkeypatch):
+    monkeypatch.setattr(app, "CONFIG_PATH", tmp_path / "session.json")
+    monkeypatch.setattr(app, "SIGNIN_PATH", tmp_path / "signin_status.json")
+    monkeypatch.setattr(app, "STATUS_CACHE_PATH", tmp_path / "status_cache.json")
+    monkeypatch.setattr(app, "SITE_INFO_PATH", tmp_path / "site_info.json")
+    base_url = "https://disabled-detect.example.test"
+    write_json(
+        app.CONFIG_PATH,
+        {
+            "accounts": [
+                {"account_index": 32, "name": "disabled", "enabled": True, "base_url": base_url},
+            ]
+        },
+    )
+    write_json(app.SITE_INFO_PATH, {"sites": {base_url: {"checkin_mode": "disabled"}}})
+    app.set_signin_status_today("32", SIGNED)
+    monkeypatch.setattr(app, "fetch_public_status", lambda base_url=None: {"ok": True, "checkin_enabled": True})
+
+    with app.app.test_client() as client:
+        response = client.post("/api/sites/checkin-status", json={"base_url": base_url})
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["site"]["checkin_mode"] == "disabled"
+    assert payload["site"]["daily_signin_marked"] is True
+    assert app.get_signin_status_today("32") == SIGNED
+
+
+def test_site_checkin_status_updates_enabled_mode_from_detection(tmp_path, monkeypatch):
+    monkeypatch.setattr(app, "CONFIG_PATH", tmp_path / "session.json")
+    monkeypatch.setattr(app, "SIGNIN_PATH", tmp_path / "signin_status.json")
+    monkeypatch.setattr(app, "STATUS_CACHE_PATH", tmp_path / "status_cache.json")
+    monkeypatch.setattr(app, "SITE_INFO_PATH", tmp_path / "site_info.json")
+    base_url = "https://enabled-detect.example.test"
+    write_json(app.CONFIG_PATH, {"accounts": [{"account_index": 33, "name": "enabled", "enabled": True, "base_url": base_url}]})
+    write_json(app.SITE_INFO_PATH, {"sites": {base_url: {"checkin_mode": "enabled"}}})
+    monkeypatch.setattr(app, "fetch_public_status", lambda base_url=None: {"ok": True, "checkin_enabled": False})
+
+    with app.app.test_client() as client:
+        response = client.post("/api/sites/checkin-status", json={"base_url": base_url})
+
+    assert response.status_code == 200
+    assert response.get_json()["site"]["checkin_mode"] == "disabled"
+
+
 def test_frontend_disables_unsupported_group_checkin_and_uses_chevron_icon():
     template = (app.ROOT / "templates" / "index.html").read_text(encoding="utf-8")
 
@@ -547,6 +720,20 @@ def test_frontend_disables_unsupported_group_checkin_and_uses_chevron_icon():
     assert "manual_signin_required" not in template
     assert "'▶'" not in template
     assert "'▼'" not in template
+
+
+def test_frontend_manual_and_disabled_sites_show_marker_while_rows_stay_unsupported():
+    template = (app.ROOT / "templates" / "index.html").read_text(encoding="utf-8")
+
+    assert "siteInfoForBaseUrl(baseUrl).daily_signin_marked === true" in template
+    assert "siteCheckinManual(baseUrl)) return true" in template
+    assert "checkinMode !== 'enabled'" in template
+
+
+def test_frontend_current_status_error_overrides_last_success_for_group_counts():
+    template = (app.ROOT / "templates" / "index.html").read_text(encoding="utf-8")
+
+    assert "return state.statusErrors[key] || state.statusResults[key] || acc?.last_status || null;" in template
 
 
 def test_frontend_restores_latest_status_errors_after_refresh():

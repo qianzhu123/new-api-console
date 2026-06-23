@@ -906,16 +906,25 @@ def normalize_site_checkin_mode(raw: Any) -> str:
     return "enabled"
 
 
+def get_site_checkin_mode(base_url: str) -> str:
+    normalized_url = normalize_base_url(base_url)
+    store = load_site_info()
+    entry = store.get("sites", {}).get(normalized_url)
+    if not isinstance(entry, dict):
+        return "enabled"
+    return normalize_site_checkin_mode(entry.get("checkin_mode"))
+
+
 def is_site_checkin_manually_disabled(base_url: str) -> bool:
-    return normalize_site_checkin_mode(get_site_info(base_url).get("checkin_mode")) == "disabled"
+    return get_site_checkin_mode(base_url) == "disabled"
 
 
 def is_site_checkin_manual(base_url: str) -> bool:
-    return normalize_site_checkin_mode(get_site_info(base_url).get("checkin_mode")) == "manual"
+    return get_site_checkin_mode(base_url) == "manual"
 
 
 def is_site_checkin_manually_enabled(base_url: str) -> bool:
-    return normalize_site_checkin_mode(get_site_info(base_url).get("checkin_mode")) == "enabled"
+    return get_site_checkin_mode(base_url) == "enabled"
 
 
 def get_site_info(base_url: str) -> dict[str, Any]:
@@ -2243,7 +2252,11 @@ def build_public_accounts(accounts: list[dict[str, Any]]) -> list[dict[str, Any]
         status = item.get("status") if isinstance(item, dict) else "未签到"
         account_base_url = normalize_base_url(str(acc.get("base_url") or get_base_url()))
         status = normalize_dedicated_signin_status(account_base_url, status or "未签到")
-        if is_site_checkin_manually_disabled(account_base_url) or is_forced_unsupported_checkin_site(account_base_url):
+        if (
+            is_site_checkin_manually_disabled(account_base_url)
+            or is_site_checkin_manual(account_base_url)
+            or is_forced_unsupported_checkin_site(account_base_url)
+        ):
             status = "不可签到"
         cached_status = status_map.get(runtime_key) if isinstance(status_map.get(runtime_key), dict) else None
         if cached_status is None and name_counts.get(name) == 1:
@@ -3355,10 +3368,12 @@ def site_checkin_status():
     normalized = normalize_base_url(base_url)
     system_status = fetch_public_status(base_url=normalized)
     disabled = is_forced_unsupported_checkin_site(normalized) or system_status.get("checkin_enabled") is False
-    site = update_site_info(normalized, checkin_mode="disabled" if disabled else "enabled")
-    if disabled:
-        set_site_signin_status_today(normalized, "不可签到")
+    current_mode = get_site_checkin_mode(normalized)
+    if current_mode == "enabled":
+        site = update_site_info(normalized, checkin_mode="disabled" if disabled else "enabled")
     else:
+        site = get_site_info(normalized)
+    if current_mode == "enabled" and not disabled:
         clear_site_signin_status_today(normalized, only_status="不可签到")
     return jsonify({
         "ok": True,

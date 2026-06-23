@@ -429,11 +429,11 @@
     .site-checkin-setting-grid { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:10px; align-items:end; margin-top:9px; }
     .site-checkin-actions { display:flex; gap:8px; flex-wrap:wrap; justify-content:flex-end; align-items:center; }
     .site-checkin-actions button { padding:8px 10px; font-size:12px; }
-    .manual-signin-card { margin-top:9px; padding:10px; border:1px solid rgba(183,121,31,.22); border-radius:13px; background:rgba(183,121,31,.06); display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap; }
-    .manual-signin-card .manual-title { font-weight:800; color:#5f4e3b; }
-    .manual-toggle-button { display:inline-flex; align-items:center; gap:7px; border-radius:999px; padding:8px 12px; }
+    .manual-signin-card { margin-top:8px; padding:7px 8px; border:1px solid rgba(183,121,31,.22); border-radius:11px; background:rgba(183,121,31,.06); display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap; }
+    .manual-signin-card .manual-title { font-weight:800; color:#5f4e3b; font-size:12px; }
+    .manual-toggle-button { display:inline-flex; align-items:center; gap:6px; border-radius:999px; padding:6px 10px; font-size:12px; }
     .manual-toggle-button.signed { background:#2f855a; box-shadow:0 3px 10px rgba(47,133,90,.22); }
-    .manual-toggle-dot { width:9px; height:9px; border-radius:999px; background:rgba(255,255,255,.88); }
+    .manual-toggle-dot { width:7px; height:7px; border-radius:999px; background:rgba(255,255,255,.88); }
     .site-model-panel.collapsed .site-model-groups { display: none; }
     .site-model-panel-summary {
       display: flex;
@@ -1303,7 +1303,7 @@ function formatShortTs(ts) { const s = quoteText(ts).trim(); if (!s) return '-';
 function accountKey(acc) { return String(acc?.account_index || ''); }
 function findAccountByKey(key) { return state.accounts.find((a) => accountKey(a) === String(key)) || null; }
 function accountLabel(accOrKey) { const acc = typeof accOrKey === 'object' ? accOrKey : findAccountByKey(accOrKey); if (!acc) return `#${accOrKey}`; return `#${displayIndexByKey(accountKey(acc))} ${acc.name || ''}`.trim(); }
-function getAccountStatus(acc) { const key = accountKey(acc); return state.statusResults[key] || acc?.last_status || null; }
+function getAccountStatus(acc) { const key = accountKey(acc); return state.statusErrors[key] || state.statusResults[key] || acc?.last_status || null; }
 function getAccountQuotaMoney(acc) {
   const sr = getAccountStatus(acc);
   if (!sr || !(sr.status_state === 'VALID' || sr.session_valid)) return null;
@@ -1945,9 +1945,7 @@ function siteCheckinMode(baseUrl) {
 function siteCheckinDisabled(baseUrl) { return siteCheckinMode(baseUrl) === 'disabled'; }
 function siteCheckinManual(baseUrl) { return siteCheckinMode(baseUrl) === 'manual'; }
 function siteManualSigninSigned(baseUrl) {
-  const group = getGroupByBaseUrl(baseUrl);
-  if (!group || !group.accounts.length) return false;
-  return group.accounts.some((acc) => (state.signinStatus[accountKey(acc)] || acc.signin_status) === '已签到');
+  return siteInfoForBaseUrl(baseUrl).daily_signin_marked === true;
 }
 function siteManualChip(baseUrl) {
   if (!siteCheckinManual(baseUrl)) return '';
@@ -2760,7 +2758,8 @@ async function detectSiteCheckinStatus(baseUrl) {
       if (key) state.signinStatus[key] = acc.signin_status || state.signinStatus[key] || '未签到';
     }
     const mode = siteCheckinMode(normalized);
-    notify(mode === 'disabled' ? 'warn2' : 'ok', '签到状态检测完成', `${normalized}：${mode === 'disabled' ? '不可签到' : '可以签到'}。`);
+    const preserved = mode !== 'enabled' ? '（设置保持不变）' : '';
+    notify(mode === 'disabled' ? 'warn2' : 'ok', '签到状态检测完成', `${normalized}：${mode === 'disabled' ? '不可签到' : '可以签到'}${preserved}。`);
   } finally {
     delete state.siteLoading[normalized];
     await refreshAccounts();
@@ -2774,6 +2773,7 @@ async function toggleManualSignin(baseUrl) {
   const normalized = normalizeBaseUrlInput(baseUrl);
   const signed = !siteManualSigninSigned(normalized);
   const data = await api('/api/sites/manual-signin', { method: 'POST', body: JSON.stringify({ base_url: normalized, signed }) });
+  state.siteInfo[normalized] = data.site || state.siteInfo[normalized] || {};
   for (const acc of data.accounts || []) {
     const key = accountKey(acc);
     if (key) state.signinStatus[key] = acc.signin_status || (signed ? '已签到' : '未签到');
@@ -2877,8 +2877,8 @@ function renderSiteDetail() {
           <button type="button" class="secondary" data-detect-site-checkin ${loading ? 'disabled' : ''}>${loading === 'checkin-status' ? '检测中' : '检测签到状态'}</button>
         </div>
       </div>
-      ${checkinMode === 'manual' ? `<div class="manual-signin-card">
-        <div><div class="manual-title">手动签到</div></div>
+      ${checkinMode !== 'enabled' ? `<div class="manual-signin-card">
+        <div><div class="manual-title">今日手动标记</div></div>
         <button type="button" class="manual-toggle-button ${siteManualSigninSigned(baseUrl) ? 'signed' : ''}" data-toggle-manual-signin>
           <span class="manual-toggle-dot"></span>${siteManualSigninSigned(baseUrl) ? '今日已签到' : '标记今日已签到'}
         </button>
