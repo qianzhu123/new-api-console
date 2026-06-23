@@ -2,13 +2,17 @@
 
 A local Flask web console for multi-account new-api management.
 
+Repository: `https://github.com/qianzhu123/new-api-console`
+
+This project is designed for local-only account operations: importing new-api/sub2api login data, grouping accounts by site address, checking balances, tracking daily sign-in state, and managing token metadata without publishing private runtime data.
+
 ## Features
 
 - Multi-account management (add, edit, enable/disable, delete)
 - Optional per-account remarks, editable from the account form and shown in account details
 - Per-account domain (`base_url`) configuration (required when adding/editing)
 - `new_api_user` is optional when adding or editing an account; when provided, it must be numeric.
-- Address-level detail view with aggregate balances, editable remarks, special labels, display color, sign-in mode, and cached supported-model information
+- Address-level detail view with aggregate balances, editable remarks, special labels, display color, sign-in mode, cached supported-model information, and daily manual sign-in markers
 - Fixed header/detail layout: the address-account list scrolls independently while top controls and the right detail panel stay visible
 - Address-level delete action that removes the address group and all accounts under it
 - One-click sign-in for one account or all enabled accounts
@@ -18,6 +22,7 @@ A local Flask web console for multi-account new-api management.
   - current balance
   - delta vs previous check
   - previous check timestamp
+  - cached fallback display when the latest check has no quota data
 - Token management:
   - create tokens from locally cached groups
   - refresh token groups and token records on demand
@@ -95,6 +100,7 @@ run_web.bat
 
 - `http://127.0.0.1:5050`
 - On Windows, `run_web.bat` first terminates all previous service processes listening on port `5050`, then starts one new service instance.
+- The web UI includes a fixed left account list and right detail panel so long account groups can be browsed without losing the main controls.
 
 ## Core Behavior
 
