@@ -727,6 +727,8 @@ def test_frontend_manual_and_disabled_sites_show_marker_while_rows_stay_unsuppor
 
     assert "siteInfoForBaseUrl(baseUrl).daily_signin_marked === true" in template
     assert "siteCheckinManual(baseUrl)) return true" in template
+    assert "!siteCheckinManual(baseUrl) && !siteCheckinDisabled(baseUrl)" in template
+    assert "siteCheckinDisabled(baseUrl) ? '手动标记' : '手动签到'" in template
     assert "checkinMode !== 'enabled'" in template
 
 

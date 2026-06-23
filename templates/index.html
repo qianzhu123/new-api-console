@@ -1948,9 +1948,10 @@ function siteManualSigninSigned(baseUrl) {
   return siteInfoForBaseUrl(baseUrl).daily_signin_marked === true;
 }
 function siteManualChip(baseUrl) {
-  if (!siteCheckinManual(baseUrl)) return '';
+  if (!siteCheckinManual(baseUrl) && !siteCheckinDisabled(baseUrl)) return '';
+  const label = siteCheckinDisabled(baseUrl) ? '手动标记' : '手动签到';
   const signed = siteManualSigninSigned(baseUrl);
-  return `<span class="site-manual-chip ${signed ? 'signed' : ''}" title="手动签到：${signed ? '今日已标记签到' : '今日未标记签到'}"><span class="today-dot"></span>手动签到 · ${signed ? '今日已签到' : '今日未签到'}</span>`;
+  return `<span class="site-manual-chip ${signed ? 'signed' : ''}" title="${label}：${signed ? '今日已标记签到' : '今日未标记签到'}"><span class="today-dot"></span>${label} · ${signed ? '今日已签到' : '今日未签到'}</span>`;
 }
 function updateSiteCheckinModeCache(baseUrl, mode) {
   const normalized = normalizeBaseUrlInput(baseUrl);
