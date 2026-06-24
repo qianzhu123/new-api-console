@@ -109,8 +109,8 @@ run_web.bat
 - When you run `签到` / `全部签到`, successful states (`SIGNED_NOW`, `ALREADY_SIGNED`) are saved as `已签到`.
 - Failed states remain `未签到`.
 - If an account's check-in request reports that check-in is disabled or unsupported, or the check-in endpoint returns HTTP 404/405, only that account's daily sign-in status is saved as `不可签到`.
-- Address detail has a sign-in mode selector: `可以签到` keeps the address eligible for automatic/batch sign-in; `手动签到` and `不可签到` skip automatic sign-in and expose a compact daily manual marker.
-- A manual daily marker is separate from public sign-in capability: `手动签到` / `不可签到` account rows still show `不可签到`, while the address chip can show `手动签到 · 今日已签到`.
+- Address detail has a sign-in mode selector: `可以签到` keeps the address eligible for automatic/batch sign-in; `手动签到` skips automatic sign-in and exposes a compact daily manual marker; `不可签到` skips automatic sign-in without showing a marker.
+- A manual daily marker is available only in `手动签到` mode. Saving an address as `不可签到` clears its current-day manual marker, and the manual marker API rejects non-manual addresses.
 - Address sign-in capability detection updates the saved mode only while the current mode is `可以签到`; explicit `手动签到` and `不可签到` choices are preserved.
 - A website group is treated as `不可签到` when the address is set to `手动签到` / `不可签到`, forced unsupported, or every account under that address is already marked `不可签到`.
 - `全部签到` only sends requests for enabled accounts whose current daily status is `未签到`; accounts marked `已签到` or `不可签到` are skipped.

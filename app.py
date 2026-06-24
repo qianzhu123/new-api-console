@@ -3338,6 +3338,9 @@ def site_info():
     site = update_site_info(base_url, remark=remark, special_info=special_info, display_color=display_color, pinned=pinned, checkin_mode=checkin_mode)
     if has_checkin_mode and site.get("checkin_mode") in ("enabled", "manual"):
         clear_site_signin_status_today(base_url, only_status="不可签到")
+    elif has_checkin_mode and site.get("checkin_mode") == "disabled":
+        clear_site_signin_status_today(base_url, only_status="已签到")
+    site = get_site_info(base_url)
     return jsonify({"ok": True, "site": site, "accounts": build_public_accounts(load_config(normalize_and_persist=False).get("accounts", []))})
 
 
@@ -3351,6 +3354,8 @@ def site_manual_signin():
     accounts = site_accounts_for_base_url(base_url)
     if not accounts:
         return jsonify({"ok": False, "error": "site has no accounts"}), 404
+    if get_site_checkin_mode(base_url) != "manual":
+        return jsonify({"ok": False, "error": "site is not in manual check-in mode"}), 409
     if signed:
         set_site_signin_status_today(base_url, "已签到")
     else:

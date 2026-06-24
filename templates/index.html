@@ -1948,10 +1948,9 @@ function siteManualSigninSigned(baseUrl) {
   return siteInfoForBaseUrl(baseUrl).daily_signin_marked === true;
 }
 function siteManualChip(baseUrl) {
-  if (!siteCheckinManual(baseUrl) && !siteCheckinDisabled(baseUrl)) return '';
-  const label = siteCheckinDisabled(baseUrl) ? '手动标记' : '手动签到';
+  if (!siteCheckinManual(baseUrl)) return '';
   const signed = siteManualSigninSigned(baseUrl);
-  return `<span class="site-manual-chip ${signed ? 'signed' : ''}" title="${label}：${signed ? '今日已标记签到' : '今日未标记签到'}"><span class="today-dot"></span>${label} · ${signed ? '今日已签到' : '今日未签到'}</span>`;
+  return `<span class="site-manual-chip ${signed ? 'signed' : ''}" title="手动签到：${signed ? '今日已标记签到' : '今日未标记签到'}"><span class="today-dot"></span>手动签到 · ${signed ? '今日已签到' : '今日未签到'}</span>`;
 }
 function updateSiteCheckinModeCache(baseUrl, mode) {
   const normalized = normalizeBaseUrlInput(baseUrl);
@@ -2878,7 +2877,7 @@ function renderSiteDetail() {
           <button type="button" class="secondary" data-detect-site-checkin ${loading ? 'disabled' : ''}>${loading === 'checkin-status' ? '检测中' : '检测签到状态'}</button>
         </div>
       </div>
-      ${checkinMode !== 'enabled' ? `<div class="manual-signin-card">
+      ${checkinMode === 'manual' ? `<div class="manual-signin-card">
         <div><div class="manual-title">今日手动标记</div></div>
         <button type="button" class="manual-toggle-button ${siteManualSigninSigned(baseUrl) ? 'signed' : ''}" data-toggle-manual-signin>
           <span class="manual-toggle-dot"></span>${siteManualSigninSigned(baseUrl) ? '今日已签到' : '标记今日已签到'}

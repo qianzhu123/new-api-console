@@ -27,6 +27,7 @@ class FakeResponse:
 def test_ambiguous_legacy_name_status_does_not_mark_duplicate_accounts_signed(tmp_path, monkeypatch):
     monkeypatch.setattr(app, "SIGNIN_PATH", tmp_path / "signin_status.json")
     monkeypatch.setattr(app, "STATUS_CACHE_PATH", tmp_path / "status_cache.json")
+    monkeypatch.setattr(app, "SITE_INFO_PATH", tmp_path / "site_info.json")
     write_json(
         app.SIGNIN_PATH,
         {
@@ -498,7 +499,7 @@ def test_manual_marker_for_forced_unsupported_site_preserves_mode_and_public_sta
     assert accounts_response.get_json()["accounts"][0]["signin_status"] == UNSUPPORTED
 
 
-def test_manual_marker_for_disabled_site_preserves_mode_and_public_status(tmp_path, monkeypatch):
+def test_manual_marker_rejects_disabled_site(tmp_path, monkeypatch):
     monkeypatch.setattr(app, "CONFIG_PATH", tmp_path / "session.json")
     monkeypatch.setattr(app, "SIGNIN_PATH", tmp_path / "signin_status.json")
     monkeypatch.setattr(app, "STATUS_CACHE_PATH", tmp_path / "status_cache.json")
@@ -526,10 +527,34 @@ def test_manual_marker_for_disabled_site_preserves_mode_and_public_status(tmp_pa
         response = client.post("/api/sites/manual-signin", json={"base_url": base_url, "signed": True})
         site_response = client.get("/api/sites/info", query_string={"base_url": base_url})
 
+    assert response.status_code == 409
+    assert response.get_json()["error"] == "site is not in manual check-in mode"
+    assert site_response.get_json()["site"]["daily_signin_marked"] is False
+
+
+def test_site_info_disabled_mode_clears_daily_manual_marker(tmp_path, monkeypatch):
+    monkeypatch.setattr(app, "CONFIG_PATH", tmp_path / "session.json")
+    monkeypatch.setattr(app, "SIGNIN_PATH", tmp_path / "signin_status.json")
+    monkeypatch.setattr(app, "STATUS_CACHE_PATH", tmp_path / "status_cache.json")
+    monkeypatch.setattr(app, "SITE_INFO_PATH", tmp_path / "site_info.json")
+    base_url = "https://disable-marker.example.test"
+    write_json(
+        app.CONFIG_PATH,
+        {"accounts": [{"account_index": 41, "name": "manual", "enabled": True, "base_url": base_url}]},
+    )
+    write_json(app.SITE_INFO_PATH, {"sites": {base_url: {"checkin_mode": "manual"}}})
+    app.set_signin_status_today("41", SIGNED)
+
+    with app.app.test_client() as client:
+        response = client.put(
+            "/api/sites/info",
+            json={"base_url": base_url, "checkin_mode": "disabled"},
+        )
+
     assert response.status_code == 200
     assert response.get_json()["site"]["checkin_mode"] == "disabled"
-    assert site_response.get_json()["site"]["daily_signin_marked"] is True
-    assert response.get_json()["accounts"][0]["signin_status"] == UNSUPPORTED
+    assert response.get_json()["site"]["daily_signin_marked"] is False
+    assert app.get_signin_status_today("41") == UNSIGNED
 
 
 def test_manual_marker_for_manual_site_preserves_public_unsupported_status(tmp_path, monkeypatch):
@@ -620,6 +645,7 @@ def test_site_manual_signin_unmark_clears_only_signed_marker(tmp_path, monkeypat
             ]
         },
     )
+    write_json(app.SITE_INFO_PATH, {"sites": {base_url: {"checkin_mode": "manual"}}})
     app.set_signin_status_today("21", SIGNED)
     app.set_signin_status_today("22", UNSUPPORTED)
 
@@ -722,14 +748,15 @@ def test_frontend_disables_unsupported_group_checkin_and_uses_chevron_icon():
     assert "'▼'" not in template
 
 
-def test_frontend_manual_and_disabled_sites_show_marker_while_rows_stay_unsupported():
+def test_frontend_only_manual_sites_show_daily_marker():
     template = (app.ROOT / "templates" / "index.html").read_text(encoding="utf-8")
 
     assert "siteInfoForBaseUrl(baseUrl).daily_signin_marked === true" in template
     assert "siteCheckinManual(baseUrl)) return true" in template
-    assert "!siteCheckinManual(baseUrl) && !siteCheckinDisabled(baseUrl)" in template
-    assert "siteCheckinDisabled(baseUrl) ? '手动标记' : '手动签到'" in template
-    assert "checkinMode !== 'enabled'" in template
+    assert "if (!siteCheckinManual(baseUrl)) return '';" in template
+    assert "siteCheckinDisabled(baseUrl) ? '手动标记' : '手动签到'" not in template
+    assert "checkinMode === 'manual'" in template
+    assert "checkinMode !== 'enabled'" not in template
 
 
 def test_frontend_current_status_error_overrides_last_success_for_group_counts():

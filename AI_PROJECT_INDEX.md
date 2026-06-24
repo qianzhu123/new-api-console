@@ -146,8 +146,8 @@
 - 自定义 Cookie 站点：`build_custom_cookie_auth`、`classify_custom_cookie_checkin`、`request_custom_cookie_self_with_retry`。
 - 签到判断：`classify_checkin`。
 - 余额/账号状态：`check_status`。
-- 不可签到：`checkin_response_unsupported`、`is_forced_unsupported_checkin_site`；账号级签到失败只写本账号，地址级 `手动签到` / `不可签到` 通过公开账号投影显示为 `不可签到`，不会覆盖原始今日手动标记。
-- 地址级今日手动标记：`daily_signin_marked` 来自原始今日签到记录；前端地址 chip/card 读取该字段，账号行仍按地址能力显示 `不可签到`。
+- 不可签到：`checkin_response_unsupported`、`is_forced_unsupported_checkin_site`；账号级签到失败只写本账号，地址级 `手动签到` / `不可签到` 通过公开账号投影显示为 `不可签到`。保存地址为 `不可签到` 时会清除当天原始手动签到标记。
+- 地址级今日手动标记：`daily_signin_marked` 来自原始今日签到记录；仅 `手动签到` 模式的前端地址 chip/card 读取并展示该字段，`POST /api/sites/manual-signin` 也只接受该模式。
 - 地址级签到能力检测：`POST /api/sites/checkin-status` 只在当前 `checkin_mode=enabled` 时写入检测结果；`manual` / `disabled` 不会被检测覆盖。
 - 检测失败缓存：`set_status_cache` 只保存成功检测结果；前端会用 `statusErrors` 显示当前异常，同时右侧详情保留 `statusResults` / `last_status` 中的最后成功结果。
 - 异常登录恢复：`POST /api/accounts/<account_index>/refresh-auth` 解析扩展采集 JSON，按账号序号更新同地址账号的登录信息，然后立即调用 `check_status` 重新检测。
