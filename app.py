@@ -3434,6 +3434,46 @@ def persist_account_checkin_result(account: dict[str, Any], result: dict[str, An
         set_signin_status_today(runtime_key, "未签到")
 
 
+def run_synced_account_background_tasks(account: dict[str, Any], created: bool) -> None:
+    account = dict(account)
+    account_index = int(account.get("account_index", 0) or 0)
+    runtime_key = str(account_index) if account_index > 0 else str(account.get("name") or "")
+    try:
+        account_base_url = normalize_base_url(str(account.get("base_url") or get_base_url()))
+        if created:
+            checkin_result = classify_checkin(account)
+            checkin_result["account_index"] = account_index
+            persist_account_checkin_result(account, checkin_result)
+
+        system_status = fetch_public_status(base_url=account_base_url)
+        result = check_status(account, system_status=system_status)
+        result["account_index"] = account_index
+        signin_status = get_signin_status_today(runtime_key)
+        if is_site_with_dedicated_checkin(account_base_url) and signin_status == "不可签到":
+            signin_status = "未签到"
+        result["signin_status"] = signin_status
+        set_status_cache(runtime_key, result)
+    except Exception as exc:
+        set_status_cache(runtime_key, {
+            "account": account.get("name") or "unknown",
+            "account_index": account_index,
+            "status_state": "BACKGROUND_ERROR",
+            "session_valid": False,
+            "api_error": str(exc),
+            "timestamp": now_ts(),
+        })
+
+
+def schedule_synced_account_background_tasks(account: dict[str, Any], created: bool) -> None:
+    worker = threading.Thread(
+        target=run_synced_account_background_tasks,
+        args=(dict(account), created),
+        daemon=True,
+        name=f"qiandao-sync-{account.get('account_index') or 'account'}",
+    )
+    worker.start()
+
+
 @app.route("/api/auth/sync-account", methods=["POST"])
 def sync_imported_account():
     try:
@@ -3464,28 +3504,14 @@ def sync_imported_account():
         if saved_idx < 0:
             raise RuntimeError("saved account not found")
         account = cfg["accounts"][saved_idx]
-        account_base_url = normalize_base_url(str(account.get("base_url") or get_base_url()))
-
-        checkin_result = None
-        if created:
-            checkin_result = classify_checkin(account)
-            checkin_result["account_index"] = account_index
-            persist_account_checkin_result(account, checkin_result)
-
-        system_status = fetch_public_status(base_url=account_base_url)
-        result = check_status(account, system_status=system_status)
-        result["account_index"] = account_index
         signin_status = get_signin_status_today(str(account_index))
-        if is_site_with_dedicated_checkin(account_base_url) and signin_status == "不可签到":
-            signin_status = "未签到"
-        result["signin_status"] = signin_status
-        set_status_cache(str(account_index), result)
-
-        action_note = "已创建新账号并完成签到和检测" if created else "已按网站地址和用户 ID 更新现有账号并完成检测"
+        schedule_synced_account_background_tasks(account, created)
+        action_note = "已创建新账号，本地保存完成，签到和检测正在后台执行" if created else "已按网站地址和用户 ID 更新现有账号，本地保存完成，重新检测正在后台执行"
         return jsonify({
             "ok": True,
             "created": created,
             "updated": not created,
+            "detection_pending": True,
             "account": to_public_account(
                 account,
                 signin_status=signin_status,
@@ -3493,9 +3519,9 @@ def sync_imported_account():
                 latest_status=get_latest_status_cache(str(account_index)),
             ),
             "accounts": build_public_accounts(cfg["accounts"]),
-            "checkin_result": checkin_result,
-            "result": result,
-            "system_status": system_status,
+            "checkin_result": None,
+            "result": None,
+            "system_status": None,
             "notes": list(notes) + [action_note],
         })
     except ValueError as exc:

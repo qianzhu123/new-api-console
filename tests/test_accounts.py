@@ -279,18 +279,15 @@ def test_sync_import_updates_existing_account_by_base_url_and_user_id(tmp_path, 
             ]
         },
     )
-    monkeypatch.setattr(app, "fetch_public_status", lambda base_url=None: {"ok": True})
+    scheduled = []
     monkeypatch.setattr(
         app,
-        "check_status",
-        lambda account, system_status=None: {
-            "account": account["name"],
-            "account_index": account["account_index"],
-            "status_state": "VALID",
-            "session_valid": True,
-            "system_status": system_status,
-        },
+        "schedule_synced_account_background_tasks",
+        lambda account, created: scheduled.append((account["account_index"], created)),
+        raising=False,
     )
+    monkeypatch.setattr(app, "fetch_public_status", lambda base_url=None: (_ for _ in ()).throw(AssertionError("remote status must run in background")))
+    monkeypatch.setattr(app, "check_status", lambda account, system_status=None: (_ for _ in ()).throw(AssertionError("account status must run in background")))
 
     with app.app.test_client() as client:
         response = client.post(
@@ -314,8 +311,10 @@ def test_sync_import_updates_existing_account_by_base_url_and_user_id(tmp_path, 
     assert payload["account"]["account_index"] == 7
     assert payload["account"]["session"] == "new-session-value-that-is-long-enough"
     assert payload["account"]["remark"] == "keep"
-    assert payload["result"]["session_valid"] is True
+    assert payload["detection_pending"] is True
+    assert payload["result"] is None
     assert payload["checkin_result"] is None
+    assert scheduled == [(7, False)]
     saved = json.loads(app.CONFIG_PATH.read_text(encoding="utf-8"))
     assert len(saved["accounts"]) == 1
 
@@ -326,29 +325,16 @@ def test_sync_import_adds_new_account_then_checks_in_and_detects(tmp_path, monke
     monkeypatch.setattr(app, "STATUS_CACHE_PATH", tmp_path / "status_cache.json")
     monkeypatch.setattr(app, "SITE_INFO_PATH", tmp_path / "site_info.json")
     write_json(app.CONFIG_PATH, {"accounts": []})
-    monkeypatch.setattr(app, "fetch_public_status", lambda base_url=None: {"ok": True})
+    scheduled = []
     monkeypatch.setattr(
         app,
-        "classify_checkin",
-        lambda account: {
-            "account": account["name"],
-            "account_index": account["account_index"],
-            "state": "SIGNED_NOW",
-            "message": "ok",
-            "timestamp": app.now_ts(),
-        },
+        "schedule_synced_account_background_tasks",
+        lambda account, created: scheduled.append((account["account_index"], created)),
+        raising=False,
     )
-    monkeypatch.setattr(
-        app,
-        "check_status",
-        lambda account, system_status=None: {
-            "account": account["name"],
-            "account_index": account["account_index"],
-            "status_state": "VALID",
-            "session_valid": True,
-            "system_status": system_status,
-        },
-    )
+    monkeypatch.setattr(app, "classify_checkin", lambda account: (_ for _ in ()).throw(AssertionError("check-in must run in background")))
+    monkeypatch.setattr(app, "fetch_public_status", lambda base_url=None: (_ for _ in ()).throw(AssertionError("remote status must run in background")))
+    monkeypatch.setattr(app, "check_status", lambda account, system_status=None: (_ for _ in ()).throw(AssertionError("account status must run in background")))
 
     with app.app.test_client() as client:
         response = client.post(
@@ -370,11 +356,67 @@ def test_sync_import_adds_new_account_then_checks_in_and_detects(tmp_path, monke
     payload = response.get_json()
     assert payload["created"] is True
     assert payload["account"]["account_index"] == 1
-    assert payload["checkin_result"]["state"] == "SIGNED_NOW"
-    assert payload["result"]["session_valid"] is True
-    assert app.get_signin_status_today("1") == "已签到"
+    assert payload["detection_pending"] is True
+    assert payload["checkin_result"] is None
+    assert payload["result"] is None
+    assert scheduled == [(1, True)]
     saved = json.loads(app.CONFIG_PATH.read_text(encoding="utf-8"))
     assert len(saved["accounts"]) == 1
+
+
+def test_synced_account_background_tasks_check_in_and_detect(tmp_path, monkeypatch):
+    monkeypatch.setattr(app, "SIGNIN_PATH", tmp_path / "signin_status.json")
+    monkeypatch.setattr(app, "STATUS_CACHE_PATH", tmp_path / "status_cache.json")
+    account = {
+        "account_index": 1,
+        "name": "new account",
+        "base_url": "https://example.test",
+    }
+    monkeypatch.setattr(
+        app,
+        "classify_checkin",
+        lambda current: {
+            "account": current["name"],
+            "account_index": current["account_index"],
+            "state": "SIGNED_NOW",
+            "message": "ok",
+            "timestamp": app.now_ts(),
+        },
+    )
+    monkeypatch.setattr(app, "fetch_public_status", lambda base_url=None: {"ok": True})
+    monkeypatch.setattr(
+        app,
+        "check_status",
+        lambda current, system_status=None: {
+            "account": current["name"],
+            "account_index": current["account_index"],
+            "status_state": "VALID",
+            "session_valid": True,
+            "system_status": system_status,
+        },
+    )
+
+    app.run_synced_account_background_tasks(account, True)
+
+    assert app.get_signin_status_today("1") == "已签到"
+    assert app.get_status_cache("1")["status_state"] == "VALID"
+
+
+def test_synced_account_background_tasks_cache_unexpected_error(tmp_path, monkeypatch):
+    monkeypatch.setattr(app, "SIGNIN_PATH", tmp_path / "signin_status.json")
+    monkeypatch.setattr(app, "STATUS_CACHE_PATH", tmp_path / "status_cache.json")
+    account = {
+        "account_index": 2,
+        "name": "existing account",
+        "base_url": "https://example.test",
+    }
+    monkeypatch.setattr(app, "fetch_public_status", lambda base_url=None: (_ for _ in ()).throw(RuntimeError("remote exploded")))
+
+    app.run_synced_account_background_tasks(account, False)
+
+    cached = app.get_latest_status_cache("2")
+    assert cached["status_state"] == "BACKGROUND_ERROR"
+    assert cached["api_error"] == "remote exploded"
 
 
 def test_frontend_contains_account_remark_fields_and_detail():
@@ -398,6 +440,8 @@ def test_frontend_contains_abnormal_auth_refresh_entrypoint():
     assert "qiandao-account" in html
     assert "qiandao-auth-refreshed" in html
     assert "/login" in html
+    assert "detail.detectionPending" in html
+    assert "检测正在后台执行" in html
 
 
 def test_extension_contains_refresh_to_local_action():
@@ -415,6 +459,11 @@ def test_extension_contains_refresh_to_local_action():
     assert '"content_scripts"' not in manifest
     assert '"storage"' not in manifest
     assert "prompt(" not in popup_js
+    assert "后台执行" in popup_js
+    assert "const result = data.result" not in popup_js
+    assert "result.session_valid" not in popup_js
+    assert "detectionPending: data.detection_pending === true" in popup_js
+    assert "finally" in popup_js
 
 
 def test_add_account_modal_is_viewport_bounded_and_scrollable():

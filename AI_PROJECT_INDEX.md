@@ -151,7 +151,7 @@
 - 地址级签到能力检测：`POST /api/sites/checkin-status` 只在当前 `checkin_mode=enabled` 时写入检测结果；`manual` / `disabled` 不会被检测覆盖。
 - 检测失败缓存：`set_status_cache` 只保存成功检测结果；前端会用 `statusErrors` 显示当前异常，同时右侧详情保留 `statusResults` / `last_status` 中的最后成功结果。
 - 异常登录恢复：`POST /api/accounts/<account_index>/refresh-auth` 解析扩展采集 JSON，按账号序号更新同地址账号的登录信息，然后立即调用 `check_status` 重新检测。
-- 扩展自动同步：`POST /api/auth/sync-account` 优先按地址和 `new_api_user` 匹配；已有账号更新并检测，新账号创建后签到并检测。
+- 扩展自动同步：`POST /api/auth/sync-account` 优先按地址和 `new_api_user` 匹配；账号写入本地后立即返回 `detection_pending=true`，`schedule_synced_account_background_tasks` 在守护线程中处理已有账号检测或新账号首次签到与检测。
 - 路由：
   - `POST /api/accounts/<account_index>/checkin`
   - `POST /api/accounts/checkin-all`

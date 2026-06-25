@@ -3657,7 +3657,9 @@ window.addEventListener('message', (event) => {
     .then(() => {
       if (key) selectAccount(key);
       const result = detail.result || {};
-      if (result.session_valid || result.status_state === 'VALID') {
+      if (detail.detectionPending) {
+        notify('ok', '账号已保存', `${accountLabel(key)} 登录信息已更新，检测正在后台执行。`);
+      } else if (result.session_valid || result.status_state === 'VALID') {
         notify('ok', '账号已更新', `${accountLabel(key)} 登录信息已更新，检测成功。`);
       } else {
         notify('warn2', '账号已更新', `${accountLabel(key)} 登录信息已更新，但检测仍异常：${result.api_error || '接口返回异常'}`);

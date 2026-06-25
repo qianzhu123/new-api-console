@@ -496,7 +496,12 @@ async function notifyQiandaoTabs(accountIndex, data) {
       func: (detail) => {
         window.postMessage({ type: 'qiandao-auth-refreshed', detail }, window.location.origin);
       },
-      args: [{ accountIndex, result: data.result || {}, account: data.account || null }]
+      args: [{
+        accountIndex,
+        detectionPending: data.detection_pending === true,
+        result: data.result || {},
+        account: data.account || null
+      }]
     }).catch(() => null)));
 }
 
@@ -519,10 +524,10 @@ async function refreshLocalAccount() {
 
     const accountIndex = String(data.account?.account_index || '');
     await notifyQiandaoTabs(accountIndex, data);
-    const result = data.result || {};
-    const action = data.created ? '已创建账号并执行签到、检测' : '已更新现有账号并重新检测';
-    const suffix = result.session_valid || result.status_state === 'VALID' ? '检测成功。' : `检测仍异常：${result.api_error || '接口返回异常'}。`;
-    setStatus(`${action} #${accountIndex}，${suffix}`, result.session_valid ? 'ok' : 'warn');
+    const action = data.created
+      ? `已添加账号 #${accountIndex} 到本地，签到和检测正在后台执行。`
+      : `已更新账号 #${accountIndex} 到本地，重新检测正在后台执行。`;
+    setStatus(action, 'ok');
   } catch (err) {
     setStatus(`更新失败：${err.message || err}`, 'err');
   } finally {

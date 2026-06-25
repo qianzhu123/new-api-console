@@ -194,7 +194,7 @@ Abnormal-account recovery:
 qiandao account detail -> 打开网站更新登录 -> login on the target site -> qiandao extension -> 采集当前页 -> 更新到本地并重新检测
 ```
 
-`更新到本地并重新检测` matches existing accounts by normalized site address plus `new_api_user`. Existing accounts are updated and checked; new accounts are added, signed in once, and checked once.
+`更新到本地并重新检测` matches existing accounts by normalized site address plus `new_api_user`. The extension returns as soon as the account is saved locally: existing accounts are then checked in the background, while new accounts are signed in once and checked once in the background. A slow target site no longer keeps the extension stuck in the syncing state.
 qiandao does not store site passwords and will not auto-fill passwords; use the browser's own saved-password/autofill behavior if available.
 
 The extension only targets `new-api` and `sub2api` import fields. It displays the detected site, provider, account name, user ID, and session source, then generates JSON that can be pasted directly into the add-account JSON import box. Exported JSON contains login credentials (`session` or Bearer token), so keep it private.
