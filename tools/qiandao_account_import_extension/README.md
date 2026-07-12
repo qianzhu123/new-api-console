@@ -23,7 +23,7 @@
 4. 选择本目录：
 
 ```text
-D:\code\myweb\qiandao\tools\qiandao_account_import_extension
+tools/qiandao_account_import_extension
 ```
 
 ## 使用方式
