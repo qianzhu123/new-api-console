@@ -117,6 +117,9 @@
     .account-row.has-site-color { border-left: 4px solid var(--site-color, var(--accent)); }
     .site-color-dot { display:inline-block; width:10px; height:10px; border-radius:999px; background:var(--site-color, var(--accent)); box-shadow:0 0 0 3px rgba(0,0,0,.06); flex:0 0 auto; }
     .site-special-chip { display:inline-flex; align-items:center; gap:5px; border-radius:999px; padding:2px 8px; font-size:12px; font-weight:700; color:var(--site-color, #715829); background:rgba(255,255,255,.72); border:1px solid color-mix(in srgb, var(--site-color, #d4af37) 36%, #ffffff); box-shadow:none; }
+    .site-special-chip.anomaly { color:#fff; background:rgba(221,107,32,.92); border-color:rgba(221,107,32,.55); animation:specialAnomalyPulse 1.4s ease infinite; }
+    .site-special-chip.checkin-anomaly { background:rgba(197,48,48,.92); border-color:rgba(197,48,48,.55); }
+    @keyframes specialAnomalyPulse { 0%,100% { opacity:1; } 50% { opacity:.6; } }
     .site-manual-chip { display:inline-flex; align-items:center; gap:6px; border-radius:999px; padding:2px 8px; font-size:12px; font-weight:800; color:#975a16; background:rgba(183,121,31,.13); border:1px solid rgba(183,121,31,.24); }
     .site-manual-chip .today-dot { width:8px; height:8px; border-radius:999px; background:#c53030; box-shadow:0 0 0 3px rgba(197,48,48,.12); }
     .site-manual-chip.signed { color:#1f6b46; background:rgba(47,133,90,.14); border-color:rgba(47,133,90,.25); }
@@ -1064,8 +1067,8 @@
           <input id="m-user" inputmode="numeric" />
         </div>
         <div class="form-group span-2">
-          <label for="m-session">Session / Bearer Token</label>
-          <textarea id="m-session"></textarea>
+          <label for="m-session">Session / Bearer Token（可选，可稍后用扩展更新）</label>
+          <textarea id="m-session" placeholder="只有账号名 + 地址时也可添加，后续用扩展更新登录信息"></textarea>
         </div>
         <div class="form-group span-2">
           <label for="m-remark">账号备注（可选）</label>
@@ -1089,6 +1092,7 @@
       <div id="modal-error" class="modal-error"></div>
 
       <div class="modal-actions">
+        <button id="btn-modal-discard" class="bad">舍弃</button>
         <button id="btn-modal-cancel" class="secondary">取消</button>
         <button id="btn-modal-save">创建账号</button>
       </div>
@@ -1141,6 +1145,8 @@ const state = {
   systemStatus: null,
   pendingGlobal: false,
   pendingAccounts: {},
+  pendingGroupOps: false,
+  modalDiscarded: false,
   dragKey: null,
   dragPointerY: null,
   dragScrollFrame: null,
@@ -1200,6 +1206,7 @@ const el = {
   modalError: document.getElementById('modal-error'),
   btnModalSave: document.getElementById('btn-modal-save'),
   btnModalCancel: document.getElementById('btn-modal-cancel'),
+  btnModalDiscard: document.getElementById('btn-modal-discard'),
   tokenModal: document.getElementById('token-modal'),
   tokenModalSub: document.getElementById('token-modal-sub'),
   tokenModalName: document.getElementById('token-modal-name'),
@@ -1633,6 +1640,15 @@ function closeAddModal() {
   el.addModal.classList.remove('open');
   el.addModal.setAttribute('aria-hidden', 'true');
   el.modalError.textContent = '';
+  state.modalDiscarded = false;
+}
+
+function discardAddModal() {
+  state.modalDiscarded = true;
+  log('已舍弃本次添加账号', 'warn2');
+  notify('warn2', '已舍弃', '当前添加账号的内容已清空。');
+  closeAddModal();
+  resetModalForm();
 }
 
 function buildPayloadFromInputs(fields) {
@@ -1652,15 +1668,19 @@ function buildPayloadFromInputs(fields) {
   };
 }
 
-function validatePayload(payload, fields) {
+function validatePayload(payload, fields, { requireSession = true } = {}) {
   const errors = [];
   clearFieldStates([fields.name, fields.baseUrl, fields.user, fields.session, fields.remark, fields.cookie]);
   if (!payload.name) { errors.push('账号名不能为空'); setFieldInvalid(fields.name, true); }
   if (payload.provider === 'new-api' && payload.new_api_user && !/^\d+$/.test(payload.new_api_user)) { errors.push('new_api_user 只能是数字'); setFieldInvalid(fields.user, true); }
   if (!payload.base_url) { errors.push('域名地址不能为空'); setFieldInvalid(fields.baseUrl, true); }
   else if (!/^https?:\/\/.+/.test(payload.base_url)) { errors.push('域名地址格式不正确'); setFieldInvalid(fields.baseUrl, true); }
-  if (!payload.session) { errors.push('Session 不能为空'); setFieldInvalid(fields.session, true); }
-  else if (/\s/.test(payload.session) || payload.session.length < (payload.provider === 'sub2api' ? 30 : 20)) { errors.push('Session / Bearer Token 不能包含空白字符，且长度不能过短'); setFieldInvalid(fields.session, true); }
+  if (requireSession) {
+    if (!payload.session) { errors.push('Session 不能为空'); setFieldInvalid(fields.session, true); }
+    else if (/\s/.test(payload.session) || payload.session.length < (payload.provider === 'sub2api' ? 30 : 20)) { errors.push('Session / Bearer Token 不能包含空白字符，且长度不能过短'); setFieldInvalid(fields.session, true); }
+  } else if (payload.session && (/\s/.test(payload.session) || payload.session.length < (payload.provider === 'sub2api' ? 30 : 20))) {
+    errors.push('Session / Bearer Token 不能包含空白字符，且长度不能过短'); setFieldInvalid(fields.session, true);
+  }
   if (payload.remark.length > 500) { errors.push('账号备注不能超过 500 个字符'); setFieldInvalid(fields.remark, true); }
   return errors;
 }
@@ -1975,6 +1995,8 @@ function clearSiteAccountsUnsupportedIfManualEnabled(baseUrl) {
   }
 }
 function safeSiteStyle(baseUrl) { const color = siteDisplayColor(baseUrl); return color ? `--site-color:${color};` : ''; }
+
+
 const SITE_COLOR_PRESETS = ['#d4af37', '#2f855a', '#355c7d', '#6b46c1', '#db2777', '#c2410c', '#0f766e', '#4f46e5', '#6b7280', '#c53030'];
 
 function accountCheckinUnsupported(acc) {
@@ -2062,7 +2084,7 @@ function renderGroupRow(group) {
           <button type="button" class="fold-btn" data-group-action="toggle" data-group-key="${key}" title="${collapsed ? '展开' : '折叠'}">
             <span class="fold-icon ${collapsed ? '' : 'expanded'}" aria-hidden="true"></span>
           </button>
-          <span class="group-url mono">${pinMark(pinned, '该地址已置顶')}${siteColor ? '<span class="site-color-dot" aria-hidden="true"></span> ' : ''}${group.baseUrl} ${specialInfo ? `<span class="site-special-chip">${escapeHtml(specialInfo)}</span>` : ''} ${siteManualChip(group.baseUrl)}</span>
+          <span class="group-url mono">${pinMark(pinned, '该地址已置顶')}${siteColor ? '<span class="site-color-dot" aria-hidden="true"></span> ' : ''}${group.baseUrl} ${specialInfo ? `<span class="site-special-chip${specialInfo.startsWith('[登录异常]') ? ' anomaly' : specialInfo.startsWith('[签到异常]') ? ' anomaly checkin-anomaly' : ''}">${escapeHtml(specialInfo)}</span>` : ''} ${siteManualChip(group.baseUrl)}</span>
           <span class="group-stats">
             <span class="group-stat">账号数 ${group.accounts.length}</span>
             <span class="group-stat">可用数 ${stats.valid}</span>
@@ -2155,11 +2177,11 @@ function renderTable() {
         return;
       }
       if (action === 'checkin') {
-        await runGroupCheckin(group);
+        await withGroupBusy(`地址签到 ${group.baseUrl}`, () => runGroupCheckin(group));
         return;
       }
       if (action === 'status') {
-        await runGroupStatus(group);
+        await withGroupBusy(`地址检测 ${group.baseUrl}`, () => runGroupStatus(group));
         return;
       }
       if (action === 'delete') {
@@ -2829,7 +2851,7 @@ function renderSiteDetail() {
       <span class="hero-badge">账号数：${group.accounts.length}</span>
       <span class="hero-badge">可用数：${stats.valid}</span>
       <span class="hero-badge">今日签到：${signText}</span>
-      ${specialInfo ? `<span class="site-special-chip">${escapeHtml(specialInfo)}</span>` : ''}
+      ${specialInfo ? `<span class="site-special-chip${specialInfo.startsWith('[登录异常]') ? ' anomaly' : specialInfo.startsWith('[签到异常]') ? ' anomaly checkin-anomaly' : ''}">${escapeHtml(specialInfo)}</span>` : ''}
       ${siteManualChip(baseUrl)}
     </div>
     <div class="metric-grid" style="margin-top:12px;">
@@ -2889,7 +2911,7 @@ function renderSiteDetail() {
       </div>
       <div class="site-special-preview">
         <span class="small">预览：</span>
-        ${specialInfo ? `<span class="site-special-chip">${escapeHtml(specialInfo)}</span>` : '<span class="small">未设置特殊信息</span>'}
+        ${specialInfo ? `<span class="site-special-chip${specialInfo.startsWith('[登录异常]') ? ' anomaly' : specialInfo.startsWith('[签到异常]') ? ' anomaly checkin-anomaly' : ''}">${escapeHtml(specialInfo)}</span>` : '<span class="small">未设置特殊信息</span>'}
         ${displayColor ? `<span class="hero-badge mono"><span class="site-color-dot"></span>${escapeHtml(displayColor)}</span>` : ''}
       </div>
       <div class="site-submit-actions">
@@ -3102,6 +3124,7 @@ async function refreshAccounts() {
   state.signinStatus = {};
   state.statusResults = {};
   state.statusErrors = {};
+
   for (const acc of state.accounts) {
     const key = accountKey(acc);
     const signinStatus = acc.signin_status || '未签到';
@@ -3132,6 +3155,37 @@ function setButtonBusy(button, busy, busyText = '') {
   button.textContent = button.dataset.label || button.textContent;
   button.classList.remove('busy-button');
   button.disabled = false;
+}
+
+async function withGroupBusy(text, fn) {
+  if (state.pendingGroupOps) return;
+  state.pendingGroupOps = true;
+  setGroupBusy(true);
+  setBusyText(`正在执行：${text}`);
+  try { await fn(); } finally {
+    setGroupBusy(false);
+    state.pendingGroupOps = false;
+    setBusyText('');
+  }
+}
+
+function setGroupBusy(busy) {
+  const toggle = (btn) => { if (btn) btn.disabled = busy; };
+  toggle(el.btnRefresh);
+  toggle(el.btnCheckinAll);
+  toggle(el.btnStatusAll);
+  toggle(el.btnNew);
+  for (const btn of document.querySelectorAll('button[data-action]')) btn.disabled = busy;
+  for (const btn of document.querySelectorAll('button[data-group-action]')) {
+    if (busy) {
+      if (!btn.dataset.label) btn.dataset.label = btn.textContent;
+      btn.classList.add('busy-button');
+    } else {
+      btn.textContent = btn.dataset.label || btn.textContent;
+      btn.classList.remove('busy-button');
+    }
+    btn.disabled = busy;
+  }
 }
 
 async function withGlobalBusy(text, button, busyText, fn) {
@@ -3252,25 +3306,28 @@ async function reorderAccounts(fromKey, toKey, before) {
   }
 }
 
-async function checkinOne(key) {
+async function checkinOne(key, { silent = false } = {}) {
   const label = accountLabel(key);
-  notify('warn2', '开始签到', `${label} 正在执行签到。`);
+  if (!silent) notify('warn2', '开始签到', `${label} 正在执行签到。`);
+  else log(`${label} 开始签到…`, '');
   const data = await api(`/api/accounts/${encodeURIComponent(key)}/checkin`, { method: 'POST', body: '{}' });
   state.checkinResults[key] = data.result;
-  if (data.result.state === 'UNSUPPORTED') { markAccountCheckinUnsupported(key); log(`${label} 不可签到`, 'warn2'); notify('warn2', '该账号不可签到', `${label}：${data.result.message || '网站未开启签到功能'}`); }
-  else if (data.result.state === 'FAILED') { state.signinStatus[key] = '未签到'; log(`${label} 签到失败：${data.result.message || ''}`, 'bad2'); notify('bad2', '签到失败', `${label}：${data.result.message || '未知原因'}`); }
-  else if (data.result.state === 'ALREADY_SIGNED') { state.signinStatus[key] = '已签到'; log(`${label} 今日已签到`, 'warn2'); notify('warn2', '今日已签到', `${label} 今天已经完成签到。`); }
-  else { state.signinStatus[key] = '已签到'; log(`${label} 签到成功`, 'ok'); notify('ok', '签到成功', `${label} 已成功签到。`); }
+  if (data.result.state === 'UNSUPPORTED') { markAccountCheckinUnsupported(key); log(`${label} 不可签到`, 'warn2'); if (!silent) notify('warn2', '该账号不可签到', `${label}：${data.result.message || '网站未开启签到功能'}`); }
+  else if (data.result.state === 'FAILED') { state.signinStatus[key] = '未签到'; log(`${label} 签到失败：${data.result.message || ''}`, 'bad2'); if (!silent) notify('bad2', '签到失败', `${label}：${data.result.message || '未知原因'}`); }
+  else if (data.result.state === 'ALREADY_SIGNED') { state.signinStatus[key] = '已签到'; log(`${label} 今日已签到`, 'warn2'); if (!silent) notify('warn2', '今日已签到', `${label} 今天已经完成签到。`); }
+  else { state.signinStatus[key] = '已签到'; log(`${label} 签到成功`, 'ok'); if (!silent) notify('ok', '签到成功', `${label} 已成功签到。`); }
   return data.result;
 }
 
-async function statusOne(key) {
+async function statusOne(key, { silent = false } = {}) {
   const label = accountLabel(key);
-  notify('warn2', '开始检测', `${label} 正在更新余额与状态信息。`);
+  if (!silent) notify('warn2', '开始检测', `${label} 正在更新余额与状态信息。`);
+  else log(`${label} 开始检测…`, '');
   const data = await api(`/api/accounts/${encodeURIComponent(key)}/status`, { method: 'POST', body: '{}' });
   if (data.result.session_valid || data.result.status_state === 'VALID') {
     state.statusResults[key] = data.result;
     delete state.statusErrors[key];
+    
   } else {
     state.statusErrors[key] = data.result;
   }
@@ -3280,15 +3337,15 @@ async function statusOne(key) {
   if (r.session_valid) {
     const q = r.quota || {}; const dc = r.quota_delta || {}; const sys = r.system_status || state.systemStatus;
     log(`${label} 检测成功：额度=${formatMoney(quotaToMoney(q.quota, sys), sys)}，与上次相比=${formatMoney(quotaToMoney(dc.change_from_previous, sys), sys, true)}`, 'ok');
-    notify('ok', '检测完成', `${label} 当前额度 ${formatMoney(quotaToMoney(q.quota, sys), sys)}，与上次相比 ${formatMoney(quotaToMoney(dc.change_from_previous, sys), sys, true)}。`);
+    if (!silent) notify('ok', '检测完成', `${label} 当前额度 ${formatMoney(quotaToMoney(q.quota, sys), sys)}，与上次相比 ${formatMoney(quotaToMoney(dc.change_from_previous, sys), sys, true)}。`);
   } else {
     log(`${label} 检测失败：${r.api_error || ''}`, r.status_state === 'INVALID_SESSION' ? 'bad2' : 'warn2');
-    notify(r.status_state === 'INVALID_SESSION' ? 'bad2' : 'warn2', '检测异常', `${label}：${r.api_error || '接口返回异常'}`);
+    if (!silent) notify(r.status_state === 'INVALID_SESSION' ? 'bad2' : 'warn2', '检测异常', `${label}：${r.api_error || '接口返回异常'}`);
   }
 }
 
 async function checkinAll() {
-  notify('warn2', '开始全部签到', '仅处理今日状态为未签到的启用账号。');
+  log('📍 全部签到开始：仅处理今日状态为未签到的启用账号。', 'warn2');
   const data = await api('/api/accounts/checkin-all', { method: 'POST', body: '{}' });
   let okCount = 0, alreadyCount = 0, unsignedCount = 0, unsupportedCount = 0;
   for (const r of data.results || []) {
@@ -3302,11 +3359,13 @@ async function checkinAll() {
   }
   const skippedSigned = Number(data.skipped_signed || 0);
   const skippedUnsupported = Number(data.skipped_unsupported || 0);
-  notify('ok', '全部签到完成', `执行 ${data.eligible_count || 0} 个：成功 ${okCount} 个，已签到 ${alreadyCount} 个，失败 ${unsignedCount} 个，不可签到 ${unsupportedCount} 个；跳过已签到 ${skippedSigned} 个、不可签到 ${skippedUnsupported} 个。`);
+  const summary = `执行 ${data.eligible_count || 0} 个：成功 ${okCount} 个，已签到 ${alreadyCount} 个，失败 ${unsignedCount} 个，不可签到 ${unsupportedCount} 个；跳过已签到 ${skippedSigned} 个、不可签到 ${skippedUnsupported} 个。`;
+  log(`✅ 全部签到完成：${summary}`, 'ok');
+  notify('ok', '全部签到完成', summary);
 }
 
 async function statusAll() {
-  notify('warn2', '开始全部检测', '正在批量更新账号余额与状态。');
+  log('📍 全部检测开始：正在批量更新账号余额与状态。', 'warn2');
   const data = await api('/api/accounts/status-all', { method: 'POST', body: '{}' });
   state.systemStatus = data.system_status || state.systemStatus;
   let validCount = 0, failCount = 0;
@@ -3323,7 +3382,9 @@ async function statusAll() {
     if (r.session_valid) { log(`${label} 检测成功`, 'ok'); validCount += 1; }
     else { log(`${label} 检测异常：${r.api_error || ''}`, 'warn2'); failCount += 1; }
   }
-  notify('ok', '全部检测完成', `有效 ${validCount} 个，异常 ${failCount} 个。`);
+  const summary = `有效 ${validCount} 个，异常 ${failCount} 个。`;
+  log(`✅ 全部检测完成：${summary}`, 'ok');
+  notify('ok', '全部检测完成', summary);
 }
 
 
@@ -3339,26 +3400,28 @@ async function runGroupCheckin(group) {
     notify('ok', '无需签到', `${group.baseUrl} 没有状态为未签到的启用账号。`);
     return;
   }
-  notify('warn2', '开始地址签到', `${group.baseUrl}：执行 ${accounts.length} 个未签到账号，跳过 ${skipped} 个。`);
+  log(`📍 地址签到开始：${group.baseUrl}，执行 ${accounts.length} 个未签到账号，跳过 ${skipped} 个。`, 'warn2');
   for (const acc of accounts) {
     const key = accountKey(acc);
-    await withAccountBusy(key, 'checkin', () => checkinOne(key));
+    await withAccountBusy(key, 'checkin', () => checkinOne(key, { silent: true }));
     if (isGroupCheckinUnsupported(group.accounts)) break;
   }
   renderTable();
   renderDetail();
+  log(`✅ 地址签到完成：${group.baseUrl}，已完成 ${accounts.length} 个未签到账号，跳过 ${skipped} 个。`, 'ok');
   notify('ok', '地址签到完成', `${group.baseUrl} 已完成 ${accounts.length} 个未签到账号，跳过 ${skipped} 个。`);
 }
 
 async function runGroupStatus(group) {
   const accounts = group.accounts.filter((acc) => acc.enabled);
-  notify('warn2', '开始地址检测', `${group.baseUrl}：共 ${accounts.length} 个启用账号。`);
+  log(`📍 地址检测开始：${group.baseUrl}，共 ${accounts.length} 个启用账号。`, 'warn2');
   for (const acc of accounts) {
     const key = accountKey(acc);
-    await withAccountBusy(key, 'status', () => statusOne(key));
+    await withAccountBusy(key, 'status', () => statusOne(key, { silent: true }));
   }
   renderTable();
   renderDetail();
+  log(`✅ 地址检测完成：${group.baseUrl} 已执行完成。`, 'ok');
   notify('ok', '地址检测完成', `${group.baseUrl} 已执行完成。`);
 }
 
@@ -3464,7 +3527,7 @@ function fillModalFromAuthAccount(account) {
 async function saveNewAccount() {
   const payload = buildPayloadFromInputs({ name: el.mName, baseUrl: el.mBaseUrl, provider: el.mProvider, user: el.mUser, session: el.mSession, remark: el.mRemark, cookie: el.mCookie, stripeMid: el.mStripeMid, stripeSid: el.mStripeSid, enabled: el.mEnabled });
   el.mBaseUrl.value = payload.base_url;
-  const errors = validatePayload(payload, { name: el.mName, baseUrl: el.mBaseUrl, provider: el.mProvider, user: el.mUser, session: el.mSession, remark: el.mRemark, cookie: el.mCookie, enabled: el.mEnabled });
+  const errors = validatePayload(payload, { name: el.mName, baseUrl: el.mBaseUrl, provider: el.mProvider, user: el.mUser, session: el.mSession, remark: el.mRemark, cookie: el.mCookie, enabled: el.mEnabled }, { requireSession: false });
   if (errors.length) { el.modalError.textContent = errors[0]; notify('bad2', '创建失败', errors[0]); return; }
   el.modalError.textContent = '';
   const data = await api('/api/accounts', { method: 'POST', body: JSON.stringify(payload) });
@@ -3539,12 +3602,13 @@ el.btnRefresh.addEventListener('click', () => withGlobalBusy('刷新账号', el.
   notify('ok', '列表已刷新', '账号列表和本地状态已经更新。');
 }).catch(e => log(e.message, 'bad2')));
 
-el.btnCheckinAll.addEventListener('click', () => withGlobalBusy('全部签到', el.btnCheckinAll, '签到中', async () => {
+el.btnCheckinAll.addEventListener('click', () => withGroupBusy('全部签到', async () => {
   await checkinAll();
   renderTable();
+  renderDetail();
 }).catch(e => log(e.message, 'bad2')));
 
-el.btnStatusAll.addEventListener('click', () => withGlobalBusy('全部检测', el.btnStatusAll, '检测中', async () => {
+el.btnStatusAll.addEventListener('click', () => withGroupBusy('全部检测', async () => {
   await statusAll();
   renderTable();
   renderDetail();
@@ -3560,6 +3624,7 @@ document.getElementById('btn-save').addEventListener('click', () => withGlobalBu
 document.getElementById('btn-cancel').addEventListener('click', () => { if (state.selected) fillForm(state.selected); else fillForm(null); });
 document.getElementById('btn-delete').addEventListener('click', () => { if (!state.editingAccountKey) return; withGlobalBusy('删除账号', document.getElementById('btn-delete'), '删除中', () => deleteOne(state.editingAccountKey)).catch(e => log(e.message, 'bad2')); });
 el.btnModalCancel.addEventListener('click', () => closeAddModal());
+if (el.btnModalDiscard) el.btnModalDiscard.addEventListener('click', () => discardAddModal());
 el.btnAuthImportJson.addEventListener('click', () => importAccountJson().catch((e) => {
   el.authStatus.textContent = e.message || String(e);
   notify('bad2', 'JSON 解析失败', e.message || String(e));

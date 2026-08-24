@@ -31,6 +31,33 @@ def test_add_account_allows_empty_new_api_user(tmp_path, monkeypatch):
     assert account["new_api_user"] == ""
 
 
+def test_add_account_accepts_only_name_and_base_url(tmp_path, monkeypatch):
+    monkeypatch.setattr(app, "CONFIG_PATH", tmp_path / "session.json")
+    monkeypatch.setattr(app, "SIGNIN_PATH", tmp_path / "signin_status.json")
+    monkeypatch.setattr(app, "STATUS_CACHE_PATH", tmp_path / "status_cache.json")
+    write_json(app.CONFIG_PATH, {"base_url": "https://example.test", "accounts": []})
+
+    with app.app.test_client() as client:
+        response = client.post(
+            "/api/accounts",
+            json={
+                "name": "name-only",
+                "base_url": "https://example.test",
+                "new_api_user": "",
+                "session": "",
+                "enabled": True,
+            },
+        )
+
+    assert response.status_code == 200
+    account = response.get_json()["account"]
+    assert account["name"] == "name-only"
+    assert account["session"] == ""
+    assert account["new_api_user"] == ""
+    config = json.loads(app.CONFIG_PATH.read_text(encoding="utf-8"))
+    assert config["accounts"][0]["session"] == ""
+
+
 def test_update_account_allows_empty_new_api_user():
     payload = {
         "name": "account",
@@ -474,3 +501,26 @@ def test_add_account_modal_is_viewport_bounded_and_scrollable():
     assert "max-height: calc(100dvh - 32px);" in html
     assert "overflow-y: auto;" in html
     assert "overscroll-behavior: contain;" in html
+
+
+def test_add_account_modal_exposes_discard_button_and_optional_session():
+    html = (app.ROOT / "templates" / "index.html").read_text(encoding="utf-8")
+
+    assert 'id="btn-modal-discard"' in html
+    assert "function discardAddModal" in html
+    assert 'id="btn-modal-discard" class="bad"' in html
+    assert "placeholder=\"只有账号名 + 地址时也可添加" in html
+    assert "{ requireSession: false }" in html
+
+
+def test_global_checkin_or_status_disables_other_actions():
+    html = (app.ROOT / "templates" / "index.html").read_text(encoding="utf-8")
+
+    assert "function withGroupBusy" in html
+    assert "function setGroupBusy" in html
+    assert "state.pendingGroupOps" in html
+    assert "el.btnCheckinAll.addEventListener('click'" in html
+    assert "withGroupBusy('全部签到'" in html
+    assert "withGroupBusy('全部检测'" in html
+    assert "withGroupBusy(`地址签到 ${group.baseUrl}`" in html
+    assert "withGroupBusy(`地址检测 ${group.baseUrl}`" in html

@@ -270,6 +270,7 @@ def validate_account_fields(
     api_keys: list[str],
     require_name: bool = True,
     provider: str = "new-api",
+    require_session: bool = True,
 ) -> None:
     if require_name and not name:
         raise ValueError("name is required")
@@ -285,13 +286,14 @@ def validate_account_fields(
     if provider == "new-api" and new_api_user and not new_api_user.isdigit():
         raise ValueError("new_api_user must be numeric")
 
-    if not session_value:
-        raise ValueError("session is required")
-    if any(ch.isspace() for ch in session_value):
-        raise ValueError("session must not contain whitespace")
-    min_session_len = 20 if provider in ("new-api", "custom") else 30
-    if len(session_value) < min_session_len:
-        raise ValueError("session looks too short")
+    if require_session:
+        if not session_value:
+            raise ValueError("session is required")
+        if any(ch.isspace() for ch in session_value):
+            raise ValueError("session must not contain whitespace")
+        min_session_len = 20 if provider in ("new-api", "custom") else 30
+        if len(session_value) < min_session_len:
+            raise ValueError("session looks too short")
 
     for key in api_keys:
         if any(ch.isspace() for ch in key):
@@ -2078,6 +2080,12 @@ def to_public_account(
     last_status = sanitize_dedicated_status_result(account_base_url, last_status)
     latest_status = sanitize_dedicated_status_result(account_base_url, latest_status)
     public_signin_status = signin_status if signin_status in ("已签到", "不可签到") else "未签到"
+
+    # NOTE: Anomaly detection is NOT done here (in read path).
+    # It is done in the write path (checkin_one, status_one, etc.)
+    # where we can compare the *previous* state with the *just-executed* result.
+    # Here we only return the account data for display.
+
     return {
         "account_index": int(account.get("account_index", 0) or 0),
         "name": account.get("name", ""),
@@ -2096,7 +2104,199 @@ def to_public_account(
     }
 
 
-def parse_account_payload(data: dict[str, Any], require_name: bool = True) -> dict[str, Any]:
+# --- special_info anomaly helpers ---
+ANOMALY_TAG_RE = r"^\[(登录异常|签到异常)\]\s*"
+
+
+def _set_site_anomaly(base_url: str, tag: str, detail: str) -> None:
+    """Set anomaly tag in site's special_info and auto-pin the site.
+
+    tag: "登录异常" or "签到异常"
+    detail: e.g. "本次检测登录失效" or "本次签到失败"
+    Only marks if no anomaly tag already exists (prevent repeat marking).
+    """
+    import re
+    normalized = normalize_base_url(base_url)
+    with config_lock:
+        store = load_site_info()
+        sites = store.get("sites", {})
+        if not isinstance(sites, dict):
+            sites = {}
+            store["sites"] = sites
+        entry = sites.get(normalized, {})
+        if not isinstance(entry, dict):
+            entry = {}
+            sites[normalized] = entry
+        current_special = str(entry.get("special_info") or "").strip()
+        # If an anomaly tag already exists, don't add another (avoids repeat marking)
+        if re.match(ANOMALY_TAG_RE, current_special):
+            return
+        # Remove any prior anomaly tag just in case
+        cleaned = re.sub(ANOMALY_TAG_RE, "", current_special).strip()
+        # Prepend new tag
+        anomaly_text = f"[{tag}]{detail}"
+        new_special = f"{anomaly_text} {cleaned}".strip()[:100]
+        entry["special_info"] = new_special
+        entry["special_info_updated_at"] = now_ts()
+        # Auto-pin
+        entry["pinned"] = True
+        entry["pinned_updated_at"] = now_ts()
+        entry["updated_at"] = now_ts()
+        sites[normalized] = entry
+        atomic_save_json(SITE_INFO_PATH, store)
+
+
+def _clear_site_anomaly(base_url: str) -> None:
+    """Remove anomaly tag from site's special_info and unpin.
+    Only removes anomaly tags; preserves user-written content.
+    """
+    import re
+    normalized = normalize_base_url(base_url)
+    with config_lock:
+        store = load_site_info()
+        sites = store.get("sites", {})
+        if not isinstance(sites, dict):
+            return
+        entry = sites.get(normalized)
+        if not isinstance(entry, dict):
+            return
+        current_special = str(entry.get("special_info") or "").strip()
+        cleaned = re.sub(ANOMALY_TAG_RE, "", current_special).strip()
+        if cleaned != current_special:
+            entry["special_info"] = cleaned
+            entry["special_info_updated_at"] = now_ts()
+            entry["updated_at"] = now_ts()
+            sites[normalized] = entry
+            atomic_save_json(SITE_INFO_PATH, store)
+
+
+def _check_checkin_anomaly(account: dict[str, Any], checkin_result: dict[str, Any]) -> None:
+    """After a checkin, detect if this is a SUDDEN anomaly.
+
+    Checkin anomaly means: the account was working fine (detection showed valid) and
+    today's checkin attempt FAILED. This only happens when:
+    - The previous detection (cache latest) showed session_valid / VALID
+    - The checkin just failed (FAILED or UNSUPPORTED)
+
+    Note: signin_status resets to "未签到" every day — that's normal, not an anomaly.
+    We only flag if the account was actually functioning (detection valid) but checkin broke.
+    """
+    runtime_key = str(int(account.get("account_index", 0) or 0))
+    if not runtime_key:
+        runtime_key = str(account.get("name") or "")
+    account_base_url = normalize_base_url(str(account.get("base_url") or get_base_url()))
+    state = checkin_result.get("state", "")
+
+    if state not in ("FAILED", "UNSUPPORTED"):
+        _clear_site_anomaly(account_base_url, tag="签到异常")
+        return
+
+    # Only flag if the PREVIOUS detection showed the account was valid
+    cache_item = _get_status_cache_item(runtime_key)
+    prev_latest = cache_item.get("latest") if isinstance(cache_item, dict) else None
+    prev_valid = isinstance(prev_latest, dict) and (
+        prev_latest.get("session_valid") is True or prev_latest.get("status_state") == "VALID"
+    )
+
+    if not prev_valid:
+        return
+
+    if state == "FAILED":
+        _set_site_anomaly(account_base_url, "签到异常", "签到失败")
+    elif state == "UNSUPPORTED":
+        _set_site_anomaly(account_base_url, "签到异常", "签到不可用")
+
+
+def _check_detection_anomaly(account: dict[str, Any], status_result: dict[str, Any]) -> None:
+    """After a status check, detect if this is a SUDDEN anomaly.
+
+    Detection anomaly means: the account was working fine in the PREVIOUS detection,
+    and now the detection shows it's invalid. This is a transition from OK → broken.
+    If the previous detection already showed it was broken, we don't flag again.
+
+    Logic:
+    - Read cache BEFORE writing new result
+    - If previous latest was VALID → new result invalid → [登录异常]
+    - If previous latest was already invalid → already known broken → no mark
+    - If new result is valid → clear any prior [登录异常]
+    """
+    runtime_key = str(int(account.get("account_index", 0) or 0))
+    if not runtime_key:
+        runtime_key = str(account.get("name") or "")
+    account_base_url = normalize_base_url(str(account.get("base_url") or get_base_url()))
+
+    session_valid = status_result.get("session_valid") is True or status_result.get("status_state") == "VALID"
+
+    if session_valid:
+        _clear_site_anomaly(account_base_url, tag="登录异常")
+        return
+
+    # Check the PREVIOUS latest status (before this detection wrote the new result)
+    cache_item = _get_status_cache_item(runtime_key)
+    prev_latest = cache_item.get("latest") if isinstance(cache_item, dict) else None
+    prev_valid = isinstance(prev_latest, dict) and (
+        prev_latest.get("session_valid") is True or prev_latest.get("status_state") == "VALID"
+    )
+
+    # Previous detection was already invalid → already broken, not sudden
+    if not prev_valid:
+        return
+
+    # Previous detection was valid → now invalid: sudden anomaly
+    api_error = str(status_result.get("api_error") or "").strip()
+    status_state = str(status_result.get("status_state") or "").strip()
+    state_labels = {
+        "INVALID_SESSION": "登录失效",
+        "NETWORK_ERROR": "网络异常",
+        "VERIFICATION_REQUIRED": "需要验证",
+        "API_ERROR": "接口异常",
+    }
+    label = state_labels.get(status_state, status_state or "异常")
+    detail = label
+    if api_error:
+        detail += f"：{api_error}"
+    _set_site_anomaly(account_base_url, "登录异常", detail)
+
+
+def _clear_site_anomaly(base_url: str, *, tag: str | None = None) -> None:
+    """Remove specific or all anomaly tag(s) from site's special_info."""
+    import re
+    normalized = normalize_base_url(base_url)
+    with config_lock:
+        store = load_site_info()
+        sites = store.get("sites", {})
+        if not isinstance(sites, dict):
+            return
+        entry = sites.get(normalized)
+        if not isinstance(entry, dict):
+            return
+        current_special = str(entry.get("special_info") or "").strip()
+        if tag:
+            # Only remove the specific tag
+            pattern = rf"^\[{re.escape(tag)}\]\s*"
+            cleaned = re.sub(pattern, "", current_special).strip()
+        else:
+            cleaned = re.sub(ANOMALY_TAG_RE, "", current_special).strip()
+        if cleaned != current_special:
+            entry["special_info"] = cleaned
+            entry["special_info_updated_at"] = now_ts()
+            entry["updated_at"] = now_ts()
+            sites[normalized] = entry
+            atomic_save_json(SITE_INFO_PATH, store)
+
+
+def _get_status_cache_item(account_name: str) -> dict[str, Any] | None:
+    """Get the raw status cache item (with latest + last_success) for an account."""
+    if not account_name:
+        return None
+    store = load_status_cache(normalize_and_persist=True)
+    accounts = store.get("accounts", {})
+    if not isinstance(accounts, dict):
+        return None
+    return accounts.get(account_name)
+
+
+def parse_account_payload(data: dict[str, Any], require_name: bool = True, require_session: bool = True) -> dict[str, Any]:
     name = str(data.get("name") or "").strip()
     raw_base_url = str(data.get("base_url") or "").strip()
     base_url = normalize_base_url(raw_base_url)
@@ -2120,6 +2320,7 @@ def parse_account_payload(data: dict[str, Any], require_name: bool = True) -> di
         api_keys=api_keys,
         require_name=require_name,
         provider=provider,
+        require_session=require_session,
     )
 
     return {
@@ -2809,7 +3010,7 @@ def list_accounts():
 def add_account():
     try:
         payload = request.get_json(force=True)
-        new_account = parse_account_payload(payload, require_name=True)
+        new_account = parse_account_payload(payload, require_name=True, require_session=False)
     except Exception as exc:
         return jsonify({"ok": False, "error": str(exc)}), 400
 
@@ -2874,7 +3075,7 @@ def update_account(account_index: int):
     old_name = str(old_account.get("name") or "")
     try:
         payload = request.get_json(force=True)
-        updated = parse_account_payload(payload, require_name=True)
+        updated = parse_account_payload(payload, require_name=True, require_session=False)
     except Exception as exc:
         return jsonify({"ok": False, "error": str(exc)}), 400
 
@@ -3029,6 +3230,7 @@ def checkin_one(account_index: int):
         set_signin_status_today(runtime_key, "不可签到")
     elif result.get("state") == "FAILED":
         set_signin_status_today(runtime_key, "未签到")
+    _check_checkin_anomaly(accounts[idx], result)
     return jsonify({"ok": True, "result": result})
 
 
@@ -3069,6 +3271,7 @@ def checkin_all():
             set_signin_status_today(runtime_key, "不可签到")
         elif result.get("state") == "FAILED":
             set_signin_status_today(runtime_key, "未签到")
+        _check_checkin_anomaly(acc, result)
         return result
 
     results = run_batch_parallel(checkin_accounts, checkin_account)
@@ -3098,6 +3301,7 @@ def status_one(account_index: int):
     if is_site_with_dedicated_checkin(account_base_url) and signin_status == "不可签到":
         signin_status = "未签到"
     result["signin_status"] = signin_status
+    _check_detection_anomaly(accounts[idx], result)
     set_status_cache(str(account_index), result)
     return jsonify({"ok": True, "result": result, "system_status": system_status})
 
@@ -3127,6 +3331,7 @@ def status_all():
             signin_status = "未签到"
         result["account_index"] = account_index
         result["signin_status"] = signin_status
+        _check_detection_anomaly(acc, result)
         set_status_cache(runtime_key, result)
         return result
 

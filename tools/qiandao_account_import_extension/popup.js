@@ -482,27 +482,42 @@ function downloadJson() {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
+function withTimeout(promise, timeoutMs, fallback = null) {
+  return new Promise(resolve => {
+    const timer = setTimeout(() => resolve(fallback), timeoutMs);
+    Promise.resolve(promise)
+      .then(value => resolve(value))
+      .catch(() => resolve(fallback))
+      .finally(() => clearTimeout(timer));
+  });
+}
+
 async function notifyQiandaoTabs(accountIndex, data) {
-  const targets = await chrome.tabs.query({
+  const detail = {
+    accountIndex,
+    detectionPending: data.detection_pending === true,
+    result: data.result || {},
+    account: data.account || null
+  };
+
+  const targets = await withTimeout(chrome.tabs.query({
     url: [
       `${LOCAL_QIANDAO_ORIGIN}/*`,
       'http://localhost:5050/*'
     ]
-  });
-  await Promise.all(targets
-    .filter(tab => tab.id)
-    .map(tab => chrome.scripting.executeScript({
+  }), 800, []);
+
+  const notifyTasks = (targets || [])
+    .filter(tab => tab.id && tab.status === 'complete')
+    .map(tab => withTimeout(chrome.scripting.executeScript({
       target: { tabId: tab.id },
-      func: (detail) => {
-        window.postMessage({ type: 'qiandao-auth-refreshed', detail }, window.location.origin);
+      func: (payload) => {
+        window.postMessage({ type: 'qiandao-auth-refreshed', detail: payload }, window.location.origin);
       },
-      args: [{
-        accountIndex,
-        detectionPending: data.detection_pending === true,
-        result: data.result || {},
-        account: data.account || null
-      }]
-    }).catch(() => null)));
+      args: [detail]
+    }), 1200, null));
+
+  await Promise.allSettled(notifyTasks);
 }
 
 async function refreshLocalAccount() {
@@ -523,11 +538,12 @@ async function refreshLocalAccount() {
     }
 
     const accountIndex = String(data.account?.account_index || '');
-    await notifyQiandaoTabs(accountIndex, data);
     const action = data.created
       ? `已添加账号 #${accountIndex} 到本地，签到和检测正在后台执行。`
       : `已更新账号 #${accountIndex} 到本地，重新检测正在后台执行。`;
     setStatus(action, 'ok');
+
+    notifyQiandaoTabs(accountIndex, data).catch(() => null);
   } catch (err) {
     setStatus(`更新失败：${err.message || err}`, 'err');
   } finally {
