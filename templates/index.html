@@ -2572,7 +2572,6 @@ async function loadSiteInfo(baseUrl) {
     const data = await api(`/api/sites/info?base_url=${encodeURIComponent(normalized)}`);
     state.siteInfo[normalized] = data.site || {};
     renderDetail();
-    if (!data.site?.models_loaded && !data.site?.models_failed && !isSub2apiOnlySite(normalized)) await refreshSiteModels(normalized, true);
   } catch (e) {
     log(`${normalized} 地址信息加载失败：${e.message || e}`, 'bad2');
     notify('bad2', '地址信息加载失败', `${normalized}：${e.message || e}`);
