@@ -2177,11 +2177,11 @@ function renderTable() {
         return;
       }
       if (action === 'checkin') {
-        await withGroupBusy(`地址签到 ${group.baseUrl}`, () => runGroupCheckin(group));
+        await withGroupBusy(btn, `地址签到 ${group.baseUrl}`, () => runGroupCheckin(group));
         return;
       }
       if (action === 'status') {
-        await withGroupBusy(`地址检测 ${group.baseUrl}`, () => runGroupStatus(group));
+        await withGroupBusy(btn, `地址检测 ${group.baseUrl}`, () => runGroupStatus(group));
         return;
       }
       if (action === 'delete') {
@@ -3156,34 +3156,16 @@ function setButtonBusy(button, busy, busyText = '') {
   button.disabled = false;
 }
 
-async function withGroupBusy(text, fn) {
+async function withGroupBusy(button, text, fn) {
   if (state.pendingGroupOps) return;
   state.pendingGroupOps = true;
-  setGroupBusy(true);
+  // 只锁触发的那一个按钮；其它按钮（顶部 4 个、单账号签到/检测/删除、其它分组行）继续可用。
+  setButtonBusy(button, true, `${button.textContent || text}中`);
   setBusyText(`正在执行：${text}`);
   try { await fn(); } finally {
-    setGroupBusy(false);
     state.pendingGroupOps = false;
+    setButtonBusy(button, false);
     setBusyText('');
-  }
-}
-
-function setGroupBusy(busy) {
-  const toggle = (btn) => { if (btn) btn.disabled = busy; };
-  toggle(el.btnRefresh);
-  toggle(el.btnCheckinAll);
-  toggle(el.btnStatusAll);
-  toggle(el.btnNew);
-  for (const btn of document.querySelectorAll('button[data-action]')) btn.disabled = busy;
-  for (const btn of document.querySelectorAll('button[data-group-action]')) {
-    if (busy) {
-      if (!btn.dataset.label) btn.dataset.label = btn.textContent;
-      btn.classList.add('busy-button');
-    } else {
-      btn.textContent = btn.dataset.label || btn.textContent;
-      btn.classList.remove('busy-button');
-    }
-    btn.disabled = busy;
   }
 }
 
@@ -3601,13 +3583,13 @@ el.btnRefresh.addEventListener('click', () => withGlobalBusy('刷新账号', el.
   notify('ok', '列表已刷新', '账号列表和本地状态已经更新。');
 }).catch(e => log(e.message, 'bad2')));
 
-el.btnCheckinAll.addEventListener('click', () => withGroupBusy('全部签到', async () => {
+el.btnCheckinAll.addEventListener('click', () => withGroupBusy(el.btnCheckinAll, '全部签到', async () => {
   await checkinAll();
   renderTable();
   renderDetail();
 }).catch(e => log(e.message, 'bad2')));
 
-el.btnStatusAll.addEventListener('click', () => withGroupBusy('全部检测', async () => {
+el.btnStatusAll.addEventListener('click', () => withGroupBusy(el.btnStatusAll, '全部检测', async () => {
   await statusAll();
   renderTable();
   renderDetail();

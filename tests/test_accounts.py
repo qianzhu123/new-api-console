@@ -513,14 +513,18 @@ def test_add_account_modal_exposes_discard_button_and_optional_session():
     assert "{ requireSession: false }" in html
 
 
-def test_global_checkin_or_status_disables_other_actions():
+def test_global_checkin_or_status_only_locks_the_triggering_button():
+    """执行一个按钮时只锁触发的那一个，其它按钮保持可用。
+
+    修复回归：之前 withGroupBusy/setGroupBusy 把顶部 4 个、单账号行、分组行
+    全部禁用，与「执行一个其它可用」需求相反。
+    """
     html = (app.ROOT / "templates" / "index.html").read_text(encoding="utf-8")
 
     assert "function withGroupBusy" in html
-    assert "function setGroupBusy" in html
+    assert "function setGroupBusy" not in html
     assert "state.pendingGroupOps" in html
-    assert "el.btnCheckinAll.addEventListener('click'" in html
-    assert "withGroupBusy('全部签到'" in html
-    assert "withGroupBusy('全部检测'" in html
-    assert "withGroupBusy(`地址签到 ${group.baseUrl}`" in html
-    assert "withGroupBusy(`地址检测 ${group.baseUrl}`" in html
+    assert "withGroupBusy(el.btnCheckinAll" in html
+    assert "withGroupBusy(el.btnStatusAll" in html
+    assert "withGroupBusy(btn, `地址签到 ${group.baseUrl}`" in html
+    assert "withGroupBusy(btn, `地址检测 ${group.baseUrl}`" in html
