@@ -17,6 +17,10 @@
 
 当采集 JSON 中没有可用凭据（无 `session` Cookie、无 `auth_token`）时，扩展仍会显示“未识别”并禁用“更新到本地”，此时可正常“复制导入 JSON”。本地 qiandao 导入该 JSON 时不会再报错，而是按 JSON 的 `title`（或域名）创建 provider 为 `unsupported`（界面显示“不可导入”）的占位账号：只保留名称和地址，签到设置、备注等仍可在地址详情/账号编辑中修改；后续采集到凭据后重新导入即可升级为可用账号。无凭据导入不会覆盖已有的可用账号。
 
+### new-api 特征站点的识别提示
+
+即使没有采到登录凭据，扩展也会通过 new-api 系特征（`new_api_has_session` 标记 Cookie、localStorage 的 `app:rev`/`new_api_user`/模块开关等）把识别结果显示为“new-api（未采集到凭据）”，并提示：确认已在本浏览器登录该站点、必要时刷新页面重新采集；若仍无凭据，可直接复制导入 JSON，由本地 qiandao 创建“不可导入”记录。
+
 ## 安装方式
 
 1. 打开 Chrome / Edge 扩展管理页：

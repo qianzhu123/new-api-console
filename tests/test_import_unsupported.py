@@ -280,6 +280,19 @@ def test_unsupported_provider_token_fetch_returns_empty_readonly():
     assert groups_payload.get("unsupported") is True
 
 
+def test_credless_import_honors_extension_new_api_detection():
+    import_json = credless_extension_import_json()
+    import_json["detected"]["provider"] = "new-api（未采集到凭据）"
+    import_json["cookieEditorCookies"] = []
+    import_json["cookies"] = []
+    import_json["storageScan"]["localStorage"]["items"] = [{"key": "i18nextLng", "value": "zhCN"}]
+
+    account, notes = app.build_auth_account_from_import_json(import_json)
+
+    assert account["provider"] == "unsupported"
+    assert any("new-api 特征" in note for note in notes)
+
+
 def test_frontend_supports_unsupported_provider_option():
     template = (app.ROOT / "templates" / "index.html").read_text(encoding="utf-8")
 
@@ -287,3 +300,14 @@ def test_frontend_supports_unsupported_provider_option():
     assert "if (provider === 'unsupported') return '不可导入';" in template
     assert "requireSession && payload.provider !== 'unsupported'" in template
     assert "normalizeProvider(acc?.provider) === 'unsupported') return true" in template
+
+
+def test_extension_recognizes_new_api_signature_without_credentials():
+    popup_js = (
+        app.ROOT / "tools" / "qiandao_account_import_extension" / "popup.js"
+    ).read_text(encoding="utf-8")
+
+    assert "function hasNewApiSignature" in popup_js
+    assert "'new_api_has_session'" in popup_js
+    assert "new-api（未采集到凭据）" in popup_js
+    assert "不可导入" in popup_js

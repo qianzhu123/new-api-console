@@ -119,6 +119,21 @@ function pickAccountName(user) {
   return String(user.display_name || user.username || user.name || user.nickname || user.email || user.id || '').trim();
 }
 
+// new-api deployments (including forks) leave recognizable traces even when no
+// usable login credential is present: the new_api_has_session marker cookie and
+// frontend module-flag/localStorage keys. Seeing them means the site type is
+// known and only the credential is missing.
+function hasNewApiSignature(cookies, localItems) {
+  const markerCookie = (cookies || []).some(c => String(c.name || '').trim().toLowerCase() === 'new_api_has_session');
+  const markerItems = (localItems || []).some(item => {
+    const key = String(item?.key || '').trim();
+    if (key === 'app:rev' || key === 'new_api_user') return true;
+    const value = typeof item?.value === 'string' ? item.value : JSON.stringify(item?.value || '');
+    return key === 'status' && !!value && (value.includes('HeaderNavModules') || value.includes('SidebarModules'));
+  });
+  return markerCookie || markerItems;
+}
+
 function normalizeIdentityFromPayload(payload) {
   if (!payload || typeof payload !== 'object') return null;
   const data = payload.data && typeof payload.data === 'object' ? payload.data : payload;
@@ -362,6 +377,18 @@ async function inferAndEnrich(tabId, output) {
     };
   }
 
+  if (hasNewApiSignature(cookies, localItems)) {
+    return {
+      provider: 'new-api（未采集到凭据）',
+      name: '',
+      userId: '',
+      sessionField: '未找到 cookie.session / localStorage 凭据',
+      hasSession: false,
+      account: null,
+      apiScan
+    };
+  }
+
   return {
     provider: '未识别',
     name: '',
@@ -439,6 +466,8 @@ async function collect() {
 
     if (summary.provider === '未识别') {
       setStatus('未识别为 new-api 或 sub2api。请确认当前页面已经登录，且网站属于这两种类型。', 'warn');
+    } else if (summary.provider === 'new-api（未采集到凭据）') {
+      setStatus('站点具备 new-api 特征，但当前浏览器没有可导入的登录凭据（session Cookie）。请确认已在本浏览器登录该站点；刚登录的话先刷新页面再重新采集。仍无凭据时可直接复制导入 JSON，qiandao 会按站点名称创建“不可导入”记录。', 'warn');
     } else if (!summary.hasSession) {
       setStatus(`已识别 ${summary.provider}，但没有找到可导入的 session/token。new-api 请确认存在 session Cookie；sub2api 请确认 localStorage.auth_token 存在。`, 'warn');
     } else if (summary.provider === 'new-api' && !summary.userId) {

@@ -2968,6 +2968,9 @@ def looks_like_new_api_import(import_json: Any, cookies: list[dict[str, Any]]) -
             return True
     if not isinstance(import_json, dict):
         return False
+    detected = import_json.get("detected")
+    if isinstance(detected, dict) and str(detected.get("provider") or "").strip().lower().startswith("new-api"):
+        return True
     storage = import_json.get("storageScan")
     if isinstance(storage, dict):
         local = storage.get("localStorage")
