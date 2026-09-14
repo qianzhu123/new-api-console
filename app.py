@@ -262,6 +262,13 @@ def merge_identity_for_import(primary: Any, storage_identity: Any) -> dict[str, 
     return merged
 
 
+SUPPORTED_PROVIDERS = ("new-api", "sub2api", "custom", "unsupported")
+
+
+def is_unsupported_placeholder(account: dict[str, Any]) -> bool:
+    return account_provider(account) == "unsupported"
+
+
 def validate_account_fields(
     name: str,
     base_url: str,
@@ -280,8 +287,8 @@ def validate_account_fields(
     if not base_url.startswith(("http://", "https://")):
         raise ValueError("base_url must start with http:// or https://")
 
-    if provider not in ("new-api", "sub2api", "custom"):
-        raise ValueError("provider must be new-api, sub2api or custom")
+    if provider not in SUPPORTED_PROVIDERS:
+        raise ValueError("provider must be new-api, sub2api, custom or unsupported")
 
     if provider == "new-api" and new_api_user and not new_api_user.isdigit():
         raise ValueError("new_api_user must be numeric")
@@ -291,7 +298,7 @@ def validate_account_fields(
             raise ValueError("session is required")
         if any(ch.isspace() for ch in session_value):
             raise ValueError("session must not contain whitespace")
-        min_session_len = 20 if provider in ("new-api", "custom") else 30
+        min_session_len = 20 if provider in ("new-api", "custom", "unsupported") else 30
         if len(session_value) < min_session_len:
             raise ValueError("session looks too short")
 
@@ -314,7 +321,7 @@ def normalize_account(account: dict[str, Any], fallback_base_url: str | None = N
     normalized["name"] = str(normalized.get("name") or "").strip()
     normalized["enabled"] = bool(normalized.get("enabled", True))
     provider = str(normalized.get("provider") or "new-api").strip().lower()
-    if provider not in ("new-api", "sub2api", "custom"):
+    if provider not in SUPPORTED_PROVIDERS:
         provider = "new-api"
     normalized["provider"] = provider
     normalized["new_api_user"] = str(normalized.get("new_api_user") or "").strip()
@@ -766,7 +773,7 @@ def get_account_by_index(account_index: int) -> dict[str, Any] | None:
 
 def account_provider(account: dict[str, Any]) -> str:
     provider = str(account.get("provider") or "new-api").strip().lower()
-    return provider if provider in ("new-api", "sub2api", "custom") else "new-api"
+    return provider if provider in SUPPORTED_PROVIDERS else "new-api"
 
 
 def token_cache_key(account: dict[str, Any]) -> str:
@@ -1291,6 +1298,8 @@ def fetch_remote_token_groups(account: dict[str, Any]) -> tuple[list[dict[str, A
     base_url = normalize_base_url(str(account.get("base_url") or get_base_url()))
     if account_provider(account) == "custom" or is_custom_auth_cookie_site(base_url):
         return [], {"custom": True, "readonly": True}
+    if account_provider(account) == "unsupported":
+        return [], {"unsupported": True, "readonly": True}
     base_url, session_value, headers, cookies = build_token_headers(account)
     if not session_value:
         raise ValueError("missing session")
@@ -1310,6 +1319,8 @@ def fetch_remote_tokens(account: dict[str, Any]) -> tuple[list[dict[str, Any]], 
     base_url = normalize_base_url(str(account.get("base_url") or get_base_url()))
     if account_provider(account) == "custom" or is_custom_auth_cookie_site(base_url):
         return fetch_custom_cookie_tokens(account)
+    if account_provider(account) == "unsupported":
+        return [], {"unsupported": True, "readonly": True}
     base_url, session_value, headers, cookies = build_token_headers(account)
     if not session_value:
         raise ValueError("missing session")
@@ -1716,6 +1727,15 @@ def classify_checkin(account: dict[str, Any]) -> dict[str, Any]:
             "timestamp": now_ts(),
         }
 
+    if provider == "unsupported":
+        return {
+            "account": name,
+            "account_index": account_index,
+            "state": "UNSUPPORTED",
+            "message": "不可导入记录：未采集到登录凭据，无法自动签到",
+            "timestamp": now_ts(),
+        }
+
     if not session_value:
         return {
             "account": name,
@@ -1796,13 +1816,18 @@ def check_status(account: dict[str, Any], system_status: dict[str, Any] | None =
     provider = "custom" if custom_auth_site else account_provider(account)
 
     if not session_value:
+        missing_session_error = (
+            "不可导入记录：未采集到登录凭据，无法检测"
+            if provider == "unsupported"
+            else "missing session"
+        )
         return {
             "account": name,
             "account_index": account_index,
             "status_state": "INVALID_SESSION",
             "session_valid": False,
             "needs_verification": False,
-            "api_error": "missing session",
+            "api_error": missing_session_error,
             "system_status": system_status,
             "timestamp": now_ts(),
         }
@@ -2301,7 +2326,7 @@ def parse_account_payload(data: dict[str, Any], require_name: bool = True, requi
     raw_base_url = str(data.get("base_url") or "").strip()
     base_url = normalize_base_url(raw_base_url)
     provider = str(data.get("provider") or "new-api").strip().lower()
-    if provider not in ("new-api", "sub2api", "custom"):
+    if provider not in SUPPORTED_PROVIDERS:
         provider = "new-api"
     new_api_user = str(data.get("new_api_user") or "").strip()
     session_value = str(data.get("session") or "").strip()
@@ -2408,6 +2433,8 @@ def find_import_update_account(
 
 
 def merge_imported_account(existing: dict[str, Any], imported: dict[str, Any]) -> dict[str, Any]:
+    if is_unsupported_placeholder(imported) and not is_unsupported_placeholder(existing):
+        raise ValueError("采集 JSON 中没有可导入的登录凭据（不可导入记录），已忽略；现有账号保持不变")
     merged = dict(existing)
     preserved_index = int(existing.get("account_index", 0) or 0)
     preserved_enabled = bool(existing.get("enabled", True))
@@ -2416,6 +2443,11 @@ def merge_imported_account(existing: dict[str, Any], imported: dict[str, Any]) -
     merged["account_index"] = preserved_index
     merged["enabled"] = preserved_enabled
     merged["remark"] = preserved_remark
+    if not str(imported.get("session") or "").strip():
+        # 无凭据的导入（仅身份信息 / 占位记录）不允许清空已有登录字段
+        for key in ("session", "cookie", "new_api_user"):
+            if str(existing.get(key) or "").strip():
+                merged[key] = existing.get(key)
     return normalize_account(merged, fallback_base_url=str(existing.get("base_url") or imported.get("base_url") or ""))
 
 
@@ -2907,6 +2939,58 @@ def account_from_qiandao_import_field(import_json: Any, base_url: str) -> dict[s
     }
 
 
+def import_site_title(import_json: Any) -> str:
+    if not isinstance(import_json, dict):
+        return ""
+    for key in ("title", "siteName", "site_name", "siteTitle", "site_title", "pageTitle", "page_title"):
+        value = str(import_json.get(key) or "").strip()
+        if value:
+            return value
+    for nested_key in ("sessionDetector", "detector", "scan", "scanner"):
+        nested = import_json.get(nested_key)
+        if isinstance(nested, dict):
+            for key in ("title", "siteName", "site_name", "name"):
+                value = str(nested.get(key) or "").strip()
+                if value:
+                    return value
+    return ""
+
+
+def looks_like_new_api_import(import_json: Any, cookies: list[dict[str, Any]]) -> bool:
+    """Heuristic: is the collected site a new-api style relay panel?
+
+    new-api sets a non-HttpOnly marker cookie (new_api_has_session) and stores
+    UI module flags in localStorage; either signature means the site itself is
+    a mainstream new-api deployment even when no usable session was captured.
+    """
+    for cookie in cookies:
+        if str(cookie.get("name") or "").strip().lower() == "new_api_has_session":
+            return True
+    if not isinstance(import_json, dict):
+        return False
+    storage = import_json.get("storageScan")
+    if isinstance(storage, dict):
+        local = storage.get("localStorage")
+        if isinstance(local, dict):
+            items = local.get("items") if isinstance(local.get("items"), list) else []
+            for item in items:
+                if isinstance(item, dict) and str(item.get("key") or "").strip() in ("app:rev", "status", "new_api_user", "user"):
+                    return True
+    return False
+
+
+def unsupported_placeholder_name(import_json: Any, base_url: str) -> str:
+    title = import_site_title(import_json)
+    if title:
+        return title
+    host = ""
+    try:
+        host = urlparse(base_url).hostname or ""
+    except Exception:
+        host = ""
+    return host or "不可导入站点"
+
+
 def build_auth_account_from_import_json(import_json: Any, fallback_base_url: str = "") -> tuple[dict[str, Any], list[str]]:
     if not isinstance(import_json, (dict, list)):
         raise ValueError("请粘贴完整 JSON 对象，或 Cookie Editor 导出的 Cookie JSON 数组")
@@ -2983,7 +3067,29 @@ def build_auth_account_from_import_json(import_json: Any, fallback_base_url: str
         notes.extend(account["notes"])
         return account, notes
 
-    raise ValueError("没有在 JSON 中找到可用字段：new-api 需要用户信息或 Cookie session；sub2api 需要 localStorage.auth_token。")
+    # 未识别到可导入的登录凭据：按“不可导入”占位记录降级，仅保存名称和地址，
+    # 签到设置 / 备注仍可在本地编辑；后续采集到 session/token 可再次导入并切换接口类型。
+    placeholder_name = unsupported_placeholder_name(import_json, base_url)
+    account = {
+        "provider": "unsupported",
+        "base_url": base_url,
+        "name": placeholder_name,
+        "new_api_user": "",
+        "session": "",
+        "cookie": "",
+        "identity": {},
+        "payload": {},
+        "notes": [
+            "未识别到可导入的 new-api/sub2api 登录凭据，已按“不可导入”记录仅保存名称和地址",
+            "签到设置、备注等仍可在本地编辑；后续采集到 session/token 后可重新导入并切换接口类型",
+        ],
+    }
+    if looks_like_new_api_import(import_json, cookies):
+        account["notes"].insert(
+            0,
+            "该站点具备 new-api 特征（如 new_api_has_session Cookie），属于主流中转站形式，但本次未采集到可用 session Cookie",
+        )
+    return account, account["notes"]
 
 
 @app.route("/")
@@ -3693,6 +3799,26 @@ def sync_imported_account():
 
         idx, existing = find_import_update_account(accounts, imported)
         created = existing is None
+        if existing is not None and is_unsupported_placeholder(imported) and not is_unsupported_placeholder(existing):
+            account = existing
+            notes = list(notes) + ["该地址已存在可用账号；本次采集未包含可用登录凭据，已保留原账号信息"]
+            return jsonify({
+                "ok": True,
+                "created": False,
+                "updated": True,
+                "detection_pending": False,
+                "account": to_public_account(
+                    account,
+                    signin_status=get_signin_status_today(str(account.get("account_index") or "")),
+                    last_status=get_status_cache(str(account.get("account_index") or "")),
+                    latest_status=get_latest_status_cache(str(account.get("account_index") or "")),
+                ),
+                "accounts": build_public_accounts(cfg["accounts"]),
+                "checkin_result": None,
+                "result": None,
+                "system_status": None,
+                "notes": notes,
+            })
         if existing is not None:
             account = merge_imported_account(existing, imported)
             accounts[idx] = account
@@ -3805,6 +3931,19 @@ def auth_import_json():
             cfg["accounts"] = accounts
         idx, existing = find_import_update_account(accounts, account)
         if existing is not None:
+            if is_unsupported_placeholder(account) and not is_unsupported_placeholder(existing):
+                return jsonify({
+                    "ok": True,
+                    "updated": True,
+                    "account": to_public_account(
+                        existing,
+                        signin_status=get_signin_status_today(str(existing.get("account_index") or "")),
+                        last_status=get_status_cache(str(existing.get("account_index") or "")),
+                        latest_status=get_latest_status_cache(str(existing.get("account_index") or "")),
+                    ),
+                    "accounts": build_public_accounts(cfg["accounts"]),
+                    "notes": list(notes) + ["该地址已存在可用账号；本次 JSON 未包含可用登录凭据，已保留原账号信息"],
+                })
             updated = merge_imported_account(existing, account)
             accounts[idx] = updated
             cfg["accounts"] = accounts

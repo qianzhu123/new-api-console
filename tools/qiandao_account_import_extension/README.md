@@ -13,6 +13,10 @@
 - new-api：读取 `session` Cookie，优先读取 `localStorage.user`，缺失时尝试请求 `/api/user/self` 补全用户 ID。
 - sub2api：读取 `localStorage.auth_token` 和 `localStorage.auth_user`，缺失用户信息时尝试请求 `/api/v1/auth/me` 补全。
 
+### 未识别站点的降级导入
+
+当采集 JSON 中没有可用凭据（无 `session` Cookie、无 `auth_token`）时，扩展仍会显示“未识别”并禁用“更新到本地”，此时可正常“复制导入 JSON”。本地 qiandao 导入该 JSON 时不会再报错，而是按 JSON 的 `title`（或域名）创建 provider 为 `unsupported`（界面显示“不可导入”）的占位账号：只保留名称和地址，签到设置、备注等仍可在地址详情/账号编辑中修改；后续采集到凭据后重新导入即可升级为可用账号。无凭据导入不会覆盖已有的可用账号。
+
 ## 安装方式
 
 1. 打开 Chrome / Edge 扩展管理页：

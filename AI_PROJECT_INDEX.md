@@ -185,7 +185,16 @@
 - Cookie/Storage 解析：`json_import_cookies`、`json_import_storage_items`、`find_auth_token_from_storage`。
 - 地址推断：`base_url_from_import_json`、`base_url_from_cookie_domains`。
 - 账号构建：`build_auth_account`、`account_from_qiandao_import_field`、`build_auth_account_from_import_json`。
-- 路由：`POST /api/auth/import-json`。
+- 不可导入回退：JSON 没有可用凭据时不再报错，`unsupported_placeholder_name`（取 `title` 或主机名）、`looks_like_new_api_import`（new-api 特征提示）生成 provider=`unsupported` 的占位账号。
+- 合并保护：`merge_imported_account` 拒绝用无凭据占位覆盖真实账号；空凭据导入不清空已有 session/cookie/new_api_user；`is_unsupported_placeholder` 为判断入口。
+- 路由：`POST /api/auth/import-json`（占位匹配真实账号时返回原账号并加“已保留原账号信息”备注）、`POST /api/auth/sync-account`（同样保护）。
+- 测试：`tests/test_import_unsupported.py`。
+
+### 不可导入（unsupported）账号约定
+
+- provider 取值扩展为 `new-api` / `sub2api` / `custom` / `unsupported`（`SUPPORTED_PROVIDERS`），前端 `PROVIDER_OPTIONS` 同步。
+- `classify_checkin` 对 unsupported 直接返回 UNSUPPORTED；`check_status` 返回 INVALID_SESSION（api_error 注明不可导入）；令牌接口返回空只读结果；均不发起网络请求。
+- 前端：`providerDisplay` 显示“不可导入”，`accountCheckinUnsupported` 视为不可签到（行/组按钮禁用），令牌面板显示只读提示，`validatePayload` 允许 unsupported 空 session。
 
 ## 6. `templates/index.html` 前端定位地图
 

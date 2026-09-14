@@ -1320,6 +1320,7 @@ function getAccountQuotaMoney(acc) {
 function providerDisplay(acc) {
   const provider = normalizeProvider(acc?.provider || 'new-api');
   if (provider === 'custom') return '自定义网站';
+  if (provider === 'unsupported') return '不可导入';
   return provider;
 }
 function accountUserDisplay(acc) {
@@ -1382,6 +1383,7 @@ const PROVIDER_OPTIONS = [
   { value: 'new-api', label: 'new-api' },
   { value: 'sub2api', label: 'sub2api' },
   { value: 'custom', label: '自定义网站' },
+  { value: 'unsupported', label: '不可导入（仅记录）' },
 ];
 
 function normalizeProvider(value) {
@@ -1675,7 +1677,7 @@ function validatePayload(payload, fields, { requireSession = true } = {}) {
   if (payload.provider === 'new-api' && payload.new_api_user && !/^\d+$/.test(payload.new_api_user)) { errors.push('new_api_user 只能是数字'); setFieldInvalid(fields.user, true); }
   if (!payload.base_url) { errors.push('域名地址不能为空'); setFieldInvalid(fields.baseUrl, true); }
   else if (!/^https?:\/\/.+/.test(payload.base_url)) { errors.push('域名地址格式不正确'); setFieldInvalid(fields.baseUrl, true); }
-  if (requireSession) {
+  if (requireSession && payload.provider !== 'unsupported') {
     if (!payload.session) { errors.push('Session 不能为空'); setFieldInvalid(fields.session, true); }
     else if (/\s/.test(payload.session) || payload.session.length < (payload.provider === 'sub2api' ? 30 : 20)) { errors.push('Session / Bearer Token 不能包含空白字符，且长度不能过短'); setFieldInvalid(fields.session, true); }
   } else if (payload.session && (/\s/.test(payload.session) || payload.session.length < (payload.provider === 'sub2api' ? 30 : 20))) {
@@ -2001,6 +2003,7 @@ const SITE_COLOR_PRESETS = ['#d4af37', '#2f855a', '#355c7d', '#6b46c1', '#db2777
 
 function accountCheckinUnsupported(acc) {
   const baseUrl = normalizeBaseUrlInput(acc?.base_url || state.defaultBaseUrl);
+  if (normalizeProvider(acc?.provider) === 'unsupported') return true;
   if (isForcedUnsupportedCheckinSite(baseUrl) || siteCheckinDisabled(baseUrl) || siteCheckinManual(baseUrl)) return true;
   if (siteCheckinMode(baseUrl) === 'enabled') return false;
   if (siteHasDedicatedCheckin(baseUrl) || normalizeProvider(acc?.provider) === 'custom') return false;
@@ -2248,6 +2251,16 @@ function renderTokenPanel(acc) {
   if (!panel || !acc) return;
   const key = accountKey(acc);
   const tokens = state.tokens[key] || [];
+  if (normalizeProvider(acc.provider) === 'unsupported') {
+    panel.innerHTML = `
+      <div class="token-head">
+        <div class="token-title">令牌管理</div>
+      </div>
+      <div class="token-section-label">已创建令牌</div>
+      <div class="token-list"><div class="token-empty">不可导入记录未配置登录凭据，不支持令牌管理；切换接口类型并补齐 session 后可用。</div></div>
+    `;
+    return;
+  }
   if (normalizeProvider(acc.provider) === 'custom') {
     const busy = tokenBusyText(key);
     const token = tokens[0] || null;
@@ -3093,7 +3106,7 @@ function selectAccount(key) {
   if (state.selected) fillForm(state.selected);
   renderTable();
   renderDetail();
-  if (state.selected) loadTokenData(key, isCustomAccount(state.selected), { reveal: !isCustomAccount(state.selected) }).catch((e) => {
+  if (state.selected && normalizeProvider(state.selected.provider) !== 'unsupported') loadTokenData(key, isCustomAccount(state.selected), { reveal: !isCustomAccount(state.selected) }).catch((e) => {
     log(`${accountLabel(key)} 令牌加载失败：${e.message || e}`, 'bad2');
     notify('bad2', '令牌加载失败', `${accountLabel(key)}：${e.message || e}`);
   });
@@ -3658,6 +3671,14 @@ function updateProviderHints(scope) {
     mid.value = '';
     sid.value = '';
     cookie.value = buildCookieFromFields('', '', cookie.value, session.value);
+  } else if (provider === 'unsupported') {
+    user.disabled = false;
+    user.previousElementSibling.textContent = '用户标识（可选）';
+    session.previousElementSibling.textContent = 'Session（可留空）';
+    session.placeholder = '不可导入记录无需登录凭据；采集到 session 后可切换接口类型';
+    mid.value = '';
+    sid.value = '';
+    cookie.value = buildCookieFromFields('', '', cookie.value);
   } else {
     user.disabled = false;
     user.previousElementSibling.textContent = provider === 'custom' ? '用户标识（可选）' : '用户标识';

@@ -387,12 +387,12 @@ def test_frontend_token_scroll_and_row_actions_are_constrained():
     template = (app.ROOT / "templates" / "index.html").read_text(encoding="utf-8")
 
     assert "overscroll-behavior: contain;" in template
-    assert "--action-col: 168px;" in template
+    assert "--action-col: 218px;" in template
     assert ".grid { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(480px, .9fr); gap: 12px;" in template
     assert ".row-actions { display: flex; gap: 6px;" in template
     assert ".row-actions { justify-content: flex-start;" in template
-    assert ".group-actions { display:flex; gap:6px; flex-wrap:nowrap; justify-content:flex-start;" in template
-    assert ".group-actions button { padding:5px 4px; font-size:12px; min-width:0; white-space:nowrap;" in template
+    assert ".group-actions { display:flex; gap:6px; flex-wrap:nowrap; justify-content:flex-end;" in template
+    assert ".group-actions button { padding:6px 9px; font-size:12px; min-width:54px; white-space:nowrap;" in template
     assert ".group-box { display:grid;" in template
     assert "min-height: 94px;" in template
     assert "function fitMetricValues()" in template
