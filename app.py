@@ -3811,6 +3811,23 @@ def schedule_synced_account_background_tasks(account: dict[str, Any], created: b
     worker.start()
 
 
+def import_settings_from_json(import_json: Any) -> tuple[str, str]:
+    """Read optional import settings carried by the extension payload.
+
+    Returns (account_remark, checkin_mode); checkin_mode is empty unless the
+    extension explicitly picked enabled/manual/disabled (absent means no change).
+    """
+    if not isinstance(import_json, dict):
+        return "", ""
+    settings = import_json.get("importSettings")
+    if not isinstance(settings, dict):
+        return "", ""
+    remark = str(settings.get("account_remark") or "").strip()[:500]
+    raw_mode = str(settings.get("checkin_mode") or "").strip().lower()
+    mode = raw_mode if raw_mode in ("enabled", "manual", "disabled") else ""
+    return remark, mode
+
+
 @app.route("/api/auth/sync-account", methods=["POST"])
 def sync_imported_account():
     try:
@@ -3855,6 +3872,16 @@ def sync_imported_account():
             accounts.append(account)
 
         cfg["accounts"] = accounts
+        setting_remark, setting_mode = import_settings_from_json(import_json)
+        if setting_remark:
+            account["remark"] = setting_remark
+        if setting_mode:
+            account_base_url = normalize_base_url(str(account.get("base_url") or get_base_url()))
+            update_site_info(account_base_url, checkin_mode=setting_mode)
+            if setting_mode in ("enabled", "manual"):
+                clear_site_signin_status_today(account_base_url, only_status="不可签到")
+            else:
+                clear_site_signin_status_today(account_base_url, only_status="已签到")
         cfg = save_config(cfg)
         account_index = int(account.get("account_index", 0) or 0)
         saved_idx = get_account_index(cfg.get("accounts", []), account_index)
@@ -3957,6 +3984,9 @@ def auth_import_json():
         payload = request.get_json(force=True)
         import_json = parse_import_json_request(payload)
         account, notes = build_auth_account_from_import_json(import_json)
+        setting_remark, _ = import_settings_from_json(import_json)
+        if setting_remark:
+            account["remark"] = setting_remark
         cfg = load_config(normalize_and_persist=False)
         accounts = cfg.get("accounts", [])
         if not isinstance(accounts, list):

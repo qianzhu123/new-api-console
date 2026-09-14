@@ -22,6 +22,22 @@
       <div><span>会话字段</span><b id="sessionText">-</b></div>
     </section>
 
+    <section class="edit-grid" id="editSection" hidden>
+      <div class="edit-field">
+        <label for="remarkInput">账户备注</label>
+        <input id="remarkInput" type="text" maxlength="500" placeholder="随导入一起保存为本地账号备注（可留空）">
+      </div>
+      <div class="edit-field">
+        <label for="checkinModeSelect">签到设置</label>
+        <select id="checkinModeSelect">
+          <option value="">默认（不在导入时修改）</option>
+          <option value="enabled">可以签到</option>
+          <option value="manual">手动签到</option>
+          <option value="disabled">不可签到</option>
+        </select>
+      </div>
+    </section>
+
     <div class="actions">
       <button id="collectBtn" class="primary">采集当前页</button>
       <button id="updateLocalBtn" class="success" disabled>更新到本地并重新检测</button>

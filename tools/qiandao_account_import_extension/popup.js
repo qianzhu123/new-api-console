@@ -6,6 +6,9 @@ const els = {
   nameText: document.getElementById('nameText'),
   userIdText: document.getElementById('userIdText'),
   sessionText: document.getElementById('sessionText'),
+  editSection: document.getElementById('editSection'),
+  remarkInput: document.getElementById('remarkInput'),
+  checkinModeSelect: document.getElementById('checkinModeSelect'),
   collectBtn: document.getElementById('collectBtn'),
   updateLocalBtn: document.getElementById('updateLocalBtn'),
   copyBtn: document.getElementById('copyBtn'),
@@ -525,6 +528,12 @@ async function collect() {
     els.userIdText.textContent = summary.userId || '-';
     els.sessionText.textContent = summary.sessionField;
 
+    els.editSection.hidden = false;
+    if (summary.account && String(summary.account.provider || '') === 'unsupported') {
+      // 不可导入记录默认不可自动签到，签到设置预选为“不可签到”，可手动改
+      els.checkinModeSelect.value = 'disabled';
+    }
+
     if (summary.provider === '未识别') {
       setStatus('未识别为 new-api 或 sub2api。请确认当前页面已经登录，且网站属于这两种类型。', 'warn');
     } else if (summary.provider === 'new-api（JWT 刷新凭据）') {
@@ -557,7 +566,7 @@ async function collect() {
 async function copyJson() {
   if (!lastJsonText) return;
   try {
-    await navigator.clipboard.writeText(lastJsonText);
+    await navigator.clipboard.writeText(jsonWithEditSettings());
     setStatus('已复制导入 JSON。回到 qiandao -> 添加账号 -> JSON 导入添加 粘贴即可。', 'ok');
   } catch (err) {
     setStatus(`复制失败：${err.message || err}。可以手动选中文本框内容复制。`, 'err');
@@ -566,7 +575,7 @@ async function copyJson() {
 
 function downloadJson() {
   if (!lastJsonText) return;
-  const blob = new Blob([lastJsonText], { type: 'application/json;charset=utf-8' });
+  const blob = new Blob([jsonWithEditSettings()], { type: 'application/json;charset=utf-8' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
@@ -575,6 +584,25 @@ function downloadJson() {
   a.click();
   a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+// Merge the popup's remark / check-in settings into the JSON right before it is
+// synced, copied, or downloaded, so the local console can apply them on import.
+function jsonWithEditSettings() {
+  if (!lastJsonText) return lastJsonText;
+  const remark = els.remarkInput ? els.remarkInput.value.trim() : '';
+  const mode = els.checkinModeSelect ? els.checkinModeSelect.value : '';
+  if (!remark && !mode) return lastJsonText;
+  try {
+    const parsed = JSON.parse(lastJsonText);
+    const settings = { ...(parsed.importSettings && typeof parsed.importSettings === 'object' ? parsed.importSettings : {}) };
+    if (remark) settings.account_remark = remark;
+    if (mode) settings.checkin_mode = mode;
+    parsed.importSettings = settings;
+    return JSON.stringify(parsed, null, 2);
+  } catch (_) {
+    return lastJsonText;
+  }
 }
 
 function withTimeout(promise, timeoutMs, fallback = null) {
@@ -625,7 +653,7 @@ async function refreshLocalAccount() {
     const response = await fetch(`${LOCAL_QIANDAO_ORIGIN}/api/auth/sync-account`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ json: lastJsonText })
+      body: JSON.stringify({ json: jsonWithEditSettings() })
     });
     const data = await response.json().catch(() => ({ ok: false, error: `HTTP ${response.status}` }));
     if (!response.ok || data.ok === false) {

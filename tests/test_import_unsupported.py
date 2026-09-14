@@ -426,6 +426,92 @@ def test_sync_route_updates_existing_unsupported_record_in_place(tmp_path, monke
     assert config["accounts"][0]["remark"] == "keep"
 
 
+def test_sync_route_applies_remark_and_checkin_mode_from_import_settings(tmp_path, monkeypatch):
+    patch_storage_paths(tmp_path, monkeypatch)
+    write_json(app.CONFIG_PATH, {"base_url": "https://xxs.example", "accounts": []})
+    monkeypatch.setattr(app, "schedule_synced_account_background_tasks", lambda *a, **k: None)
+
+    import_json = credless_extension_import_json()
+    import_json["qiandaoAccount"] = {
+        "provider": "unsupported",
+        "base_url": "https://xxs.example",
+        "name": "qianzhu",
+        "new_api_user": "574",
+        "session": "",
+        "cookie": "new_api_refresh=token-value",
+        "identity": {"id": 574, "username": "qianzhu"},
+    }
+    import_json["importSettings"] = {"account_remark": "公益站备用号", "checkin_mode": "disabled"}
+
+    with app.app.test_client() as client:
+        response = client.post(
+            "/api/auth/sync-account",
+            json={"json": json.dumps(import_json, ensure_ascii=False)},
+        )
+
+    assert response.status_code == 200
+    data = response.get_json()
+    assert data["account"]["remark"] == "公益站备用号"
+    site = app.get_site_info("https://xxs.example")
+    assert site["checkin_mode"] == "disabled"
+
+
+def test_sync_route_preserves_remark_when_import_settings_missing(tmp_path, monkeypatch):
+    patch_storage_paths(tmp_path, monkeypatch)
+    existing = {
+        "account_index": 3,
+        "name": "qianzhu",
+        "provider": "unsupported",
+        "base_url": "https://xxs.example",
+        "new_api_user": "574",
+        "session": "",
+        "cookie": "new_api_refresh=old-value",
+        "remark": "keep",
+        "enabled": True,
+        "api_keys": [],
+    }
+    write_json(app.CONFIG_PATH, {"base_url": "https://xxs.example", "accounts": [existing]})
+    monkeypatch.setattr(app, "schedule_synced_account_background_tasks", lambda *a, **k: None)
+
+    import_json = credless_extension_import_json()
+    import_json["qiandaoAccount"] = {
+        "provider": "unsupported",
+        "base_url": "https://xxs.example",
+        "name": "qianzhu",
+        "new_api_user": "574",
+        "session": "",
+        "cookie": "new_api_refresh=new-value",
+        "identity": {"id": 574, "username": "qianzhu"},
+    }
+
+    with app.app.test_client() as client:
+        response = client.post(
+            "/api/auth/sync-account",
+            json={"json": json.dumps(import_json, ensure_ascii=False)},
+        )
+
+    assert response.status_code == 200
+    config = json.loads(app.CONFIG_PATH.read_text(encoding="utf-8"))
+    assert config["accounts"][0]["remark"] == "keep"
+
+
+def test_import_route_prefills_remark_from_import_settings(tmp_path, monkeypatch):
+    patch_storage_paths(tmp_path, monkeypatch)
+    write_json(app.CONFIG_PATH, {"base_url": "https://xxs.example", "accounts": []})
+
+    import_json = credless_extension_import_json()
+    import_json["importSettings"] = {"account_remark": "粘贴导入备注"}
+
+    with app.app.test_client() as client:
+        response = client.post(
+            "/api/auth/import-json",
+            json={"json": json.dumps(import_json, ensure_ascii=False)},
+        )
+
+    assert response.status_code == 200
+    assert response.get_json()["account"]["remark"] == "粘贴导入备注"
+
+
 def test_frontend_supports_unsupported_provider_option():
     template = (app.ROOT / "templates" / "index.html").read_text(encoding="utf-8")
 
@@ -439,9 +525,13 @@ def test_extension_recognizes_new_api_signature_without_credentials():
     popup_js = (
         app.ROOT / "tools" / "qiandao_account_import_extension" / "popup.js"
     ).read_text(encoding="utf-8")
+    popup_html = (
+        app.ROOT / "tools" / "qiandao_account_import_extension" / "popup.html"
+    ).read_text(encoding="utf-8")
 
     assert "function hasNewApiSignature" in popup_js
     assert "function extractNewApiRefreshUser" in popup_js
+    assert "function jsonWithEditSettings" in popup_js
     assert "'new_api_has_session'" in popup_js
     assert "new_api_refresh" in popup_js
     assert "/api/user/auth/refresh" in popup_js
@@ -450,3 +540,5 @@ def test_extension_recognizes_new_api_signature_without_credentials():
     assert "!summary.hasSession && !summary.account" in popup_js
     assert "已保存不可导入记录" in popup_js
     assert "不可导入" in popup_js
+    assert 'id="remarkInput"' in popup_html
+    assert 'id="checkinModeSelect"' in popup_html

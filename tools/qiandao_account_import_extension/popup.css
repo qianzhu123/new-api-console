@@ -159,3 +159,43 @@ ol {
 p {
   margin-bottom: 0;
 }
+
+.edit-grid {
+  margin-top: 10px;
+  display: grid;
+  grid-template-columns: 1fr 150px;
+  gap: 8px;
+  border: 1px solid #334155;
+  border-radius: 10px;
+  padding: 10px;
+  background: #020617;
+}
+
+.edit-field {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.edit-field label {
+  color: #94a3b8;
+  font-size: 12px;
+}
+
+.edit-field input,
+.edit-field select {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid #334155;
+  border-radius: 8px;
+  background: #111827;
+  color: #e5e7eb;
+  padding: 7px 8px;
+  font-size: 13px;
+}
+
+.edit-field input:focus,
+.edit-field select:focus {
+  outline: none;
+  border-color: #3b82f6;
+}
