@@ -280,6 +280,20 @@ def test_unsupported_provider_token_fetch_returns_empty_readonly():
     assert groups_payload.get("unsupported") is True
 
 
+def test_credless_import_with_refresh_cookie_notes_captured_credential():
+    import_json = credless_extension_import_json()
+    import_json["cookieEditorCookies"] = [
+        {"domain": "xxs.example", "name": "new_api_refresh", "path": "/api/user/auth", "value": "refresh-token-value"}
+    ]
+    import_json["cookies"] = import_json["cookieEditorCookies"]
+
+    account, notes = app.build_auth_account_from_import_json(import_json)
+
+    assert account["provider"] == "unsupported"
+    assert account["session"] == ""
+    assert any("new_api_refresh" in note for note in notes)
+
+
 def test_credless_import_honors_extension_new_api_detection():
     import_json = credless_extension_import_json()
     import_json["detected"]["provider"] = "new-api（未采集到凭据）"
@@ -309,5 +323,7 @@ def test_extension_recognizes_new_api_signature_without_credentials():
 
     assert "function hasNewApiSignature" in popup_js
     assert "'new_api_has_session'" in popup_js
+    assert "new_api_refresh" in popup_js
+    assert "/api/user/auth/refresh" in popup_js
     assert "new-api（未采集到凭据）" in popup_js
     assert "不可导入" in popup_js

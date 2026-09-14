@@ -2964,7 +2964,7 @@ def looks_like_new_api_import(import_json: Any, cookies: list[dict[str, Any]]) -
     a mainstream new-api deployment even when no usable session was captured.
     """
     for cookie in cookies:
-        if str(cookie.get("name") or "").strip().lower() == "new_api_has_session":
+        if str(cookie.get("name") or "").strip().lower() in ("new_api_has_session", "new_api_refresh"):
             return True
     if not isinstance(import_json, dict):
         return False
@@ -3091,6 +3091,10 @@ def build_auth_account_from_import_json(import_json: Any, fallback_base_url: str
         account["notes"].insert(
             0,
             "该站点具备 new-api 特征（如 new_api_has_session Cookie），属于主流中转站形式，但本次未采集到可用 session Cookie",
+        )
+    if cookie_value(cookies, "new_api_refresh"):
+        account["notes"].append(
+            "已采集到该站点的 JWT 刷新凭据（new_api_refresh Cookie，HttpOnly）；本版本仅记录站点，不支持该凭据的自动签到/检测"
         )
     return account, account["notes"]
 

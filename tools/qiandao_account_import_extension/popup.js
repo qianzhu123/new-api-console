@@ -124,7 +124,7 @@ function pickAccountName(user) {
 // frontend module-flag/localStorage keys. Seeing them means the site type is
 // known and only the credential is missing.
 function hasNewApiSignature(cookies, localItems) {
-  const markerCookie = (cookies || []).some(c => String(c.name || '').trim().toLowerCase() === 'new_api_has_session');
+  const markerCookie = (cookies || []).some(c => ['new_api_has_session', 'new_api_refresh'].includes(String(c.name || '').trim().toLowerCase()));
   const markerItems = (localItems || []).some(item => {
     const key = String(item?.key || '').trim();
     if (key === 'app:rev' || key === 'new_api_user') return true;
@@ -182,9 +182,27 @@ async function collectPageStorage(tabId) {
   return result?.result;
 }
 
+// new-api family keeps its refresh credential in an HttpOnly cookie scoped to
+// Path=/api/user/auth. chrome.cookies.getAll({url}) matches cookies by path, so
+// querying a normal page URL (/dashboard, /profile...) never returns it. Query
+// the auth path explicitly so the export contains the site's real credential set.
 async function collectCookiesForUrl(url) {
-  const cookies = await chrome.cookies.getAll({ url });
-  return cookies.map(c => ({
+  let authUrl = '';
+  try {
+    authUrl = new URL('/api/user/auth/refresh', url).toString();
+  } catch (_) {
+    authUrl = '';
+  }
+  const queries = authUrl
+    ? [chrome.cookies.getAll({ url }), chrome.cookies.getAll({ url: authUrl })]
+    : [chrome.cookies.getAll({ url })];
+  const results = await Promise.all(queries);
+  const merged = new Map();
+  for (const cookie of results.flat()) {
+    if (!cookie || !cookie.name) continue;
+    merged.set(`${cookie.name}|${cookie.domain}|${cookie.path}|${cookie.value}`, cookie);
+  }
+  return Array.from(merged.values()).map(c => ({
     domain: c.domain,
     expirationDate: c.expirationDate,
     hostOnly: c.hostOnly,
@@ -467,7 +485,10 @@ async function collect() {
     if (summary.provider === '未识别') {
       setStatus('未识别为 new-api 或 sub2api。请确认当前页面已经登录，且网站属于这两种类型。', 'warn');
     } else if (summary.provider === 'new-api（未采集到凭据）') {
-      setStatus('站点具备 new-api 特征，但当前浏览器没有可导入的登录凭据（session Cookie）。请确认已在本浏览器登录该站点；刚登录的话先刷新页面再重新采集。仍无凭据时可直接复制导入 JSON，qiandao 会按站点名称创建“不可导入”记录。', 'warn');
+      const hasRefreshCookie = (output.cookieEditorCookies || []).some(c => String(c.name || '').trim().toLowerCase() === 'new_api_refresh');
+      setStatus(hasRefreshCookie
+        ? '站点具备 new-api 特征，并已采集到其 JWT 刷新凭据（new_api_refresh Cookie）。本版本不支持该凭据的自动签到/检测，可直接复制导入 JSON，qiandao 会按站点名称创建“不可导入”记录。'
+        : '站点具备 new-api 特征，但当前浏览器没有可导入的登录凭据（session Cookie）。请确认已在本浏览器登录该站点；刚登录的话先刷新页面再重新采集。仍无凭据时可直接复制导入 JSON，qiandao 会按站点名称创建“不可导入”记录。', 'warn');
     } else if (!summary.hasSession) {
       setStatus(`已识别 ${summary.provider}，但没有找到可导入的 session/token。new-api 请确认存在 session Cookie；sub2api 请确认 localStorage.auth_token 存在。`, 'warn');
     } else if (summary.provider === 'new-api' && !summary.userId) {
