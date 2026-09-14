@@ -3073,26 +3073,44 @@ def build_auth_account_from_import_json(import_json: Any, fallback_base_url: str
     # 未识别到可导入的登录凭据：按“不可导入”占位记录降级，仅保存名称和地址，
     # 签到设置 / 备注仍可在本地编辑；后续采集到 session/token 可再次导入并切换接口类型。
     placeholder_name = unsupported_placeholder_name(import_json, base_url)
+    placeholder_user = ""
+    placeholder_cookie = ""
+    placeholder_identity: dict[str, Any] = {}
+    raw_unsupported = None
+    if isinstance(import_json, dict):
+        raw_unsupported = import_json.get("qiandaoAccount") or import_json.get("account")
+        if not isinstance(raw_unsupported, dict):
+            detected = import_json.get("detected")
+            raw_unsupported = detected.get("account") if isinstance(detected, dict) else None
+    if isinstance(raw_unsupported, dict) and str(raw_unsupported.get("provider") or "").strip().lower() == "unsupported":
+        placeholder_name = str(raw_unsupported.get("name") or "").strip() or placeholder_name
+        placeholder_user = str(raw_unsupported.get("new_api_user") or raw_unsupported.get("newApiUser") or "").strip()
+        placeholder_cookie = str(raw_unsupported.get("cookie") or "").strip()
+        if isinstance(raw_unsupported.get("identity"), dict):
+            placeholder_identity = raw_unsupported["identity"]
+    notes = [
+        "未识别到可导入的 new-api/sub2api 登录凭据，已按“不可导入”记录保存名称和地址",
+        "签到设置、备注等仍可在本地编辑；后续采集到 session/token 后可重新导入并切换接口类型",
+    ]
+    if placeholder_user:
+        notes.insert(0, f"已识别账户身份（用户 ID {placeholder_user}）：站点使用 new-api JWT 刷新凭据（new_api_refresh Cookie），本版本仅记录账户，不支持该凭据的自动签到/检测")
     account = {
         "provider": "unsupported",
         "base_url": base_url,
         "name": placeholder_name,
-        "new_api_user": "",
+        "new_api_user": placeholder_user,
         "session": "",
-        "cookie": "",
-        "identity": {},
+        "cookie": placeholder_cookie,
+        "identity": placeholder_identity,
         "payload": {},
-        "notes": [
-            "未识别到可导入的 new-api/sub2api 登录凭据，已按“不可导入”记录仅保存名称和地址",
-            "签到设置、备注等仍可在本地编辑；后续采集到 session/token 后可重新导入并切换接口类型",
-        ],
+        "notes": notes,
     }
     if looks_like_new_api_import(import_json, cookies):
         account["notes"].insert(
             0,
             "该站点具备 new-api 特征（如 new_api_has_session Cookie），属于主流中转站形式，但本次未采集到可用 session Cookie",
         )
-    if cookie_value(cookies, "new_api_refresh"):
+    if cookie_value(cookies, "new_api_refresh") and not placeholder_user:
         account["notes"].append(
             "已采集到该站点的 JWT 刷新凭据（new_api_refresh Cookie，HttpOnly）；本版本仅记录站点，不支持该凭据的自动签到/检测"
         )

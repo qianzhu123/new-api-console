@@ -21,7 +21,9 @@
 
 即使没有采到登录凭据，扩展也会通过 new-api 系特征（`new_api_has_session` 标记 Cookie、localStorage 的 `app:rev`/`new_api_user`/模块开关等）把识别结果显示为“new-api（未采集到凭据）”，并提示：确认已在本浏览器登录该站点、必要时刷新页面重新采集；若仍无凭据，可直接复制导入 JSON，由本地 qiandao 创建“不可导入”记录。
 
-new-api 系站点把 JWT 刷新凭据放在 Path 限定为 `/api/user/auth` 的 HttpOnly Cookie（`new_api_refresh`）中；`chrome.cookies` 按路径匹配，普通页面 URL 采不到它。扩展会同时按该 auth 路径采集，因此导出 JSON 会包含这条凭据。当前版本不支持基于刷新凭据的自动签到/检测，导入后按“不可导入”记录保存，备注会注明已采集到该凭据。
+new-api 系站点把 JWT 刷新凭据放在 Path 限定为 `/api/user/auth` 的 HttpOnly Cookie（`new_api_refresh`）中；`chrome.cookies` 按路径匹配，普通页面 URL 采不到它。扩展会同时按该 auth 路径采集，因此导出 JSON 会包含这条凭据。
+
+扩展还会在页面内调用一次 `POST /api/user/auth/refresh`（浏览器自动携带该 Cookie）取回 `user` 身份，因此即使站点没有 session Cookie，识别结果也带**真实账户名和用户 ID**。本版本不支持基于刷新凭据的自动签到/检测，导入后按“不可导入”记录保存：记录包含站点地址、账户名和用户 ID，签到设置与备注仍可编辑；后续若采集到可用 session，可重新导入升级为可用账号。
 
 ## 安装方式
 

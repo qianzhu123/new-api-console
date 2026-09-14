@@ -294,6 +294,40 @@ def test_credless_import_with_refresh_cookie_notes_captured_credential():
     assert any("new_api_refresh" in note for note in notes)
 
 
+def test_unsupported_account_with_identity_imports_real_name_and_user():
+    import_json = credless_extension_import_json()
+    import_json["qiandaoAccount"] = {
+        "provider": "unsupported",
+        "base_url": "https://xxs.example",
+        "name": "gererh",
+        "new_api_user": "574",
+        "session": "",
+        "cookie": "new_api_refresh=token-value",
+        "identity": {"id": 574, "username": "gererh", "display_name": "gererh"},
+    }
+
+    account, notes = app.build_auth_account_from_import_json(import_json)
+
+    assert account["provider"] == "unsupported"
+    assert account["name"] == "gererh"
+    assert account["new_api_user"] == "574"
+    assert account["cookie"] == "new_api_refresh=token-value"
+    assert account["identity"]["id"] == 574
+    assert any("用户 ID 574" in note for note in notes)
+
+
+def test_unsupported_account_falls_back_to_site_title_without_identity():
+    import_json = credless_extension_import_json()
+    import_json["qiandaoAccount"] = {"provider": "unsupported", "base_url": "https://xxs.example", "name": "", "session": ""}
+
+    account, notes = app.build_auth_account_from_import_json(import_json)
+
+    assert account["provider"] == "unsupported"
+    assert account["name"] == "小学生公益站"
+    assert account["new_api_user"] == ""
+    assert not any("用户 ID" in note for note in notes)
+
+
 def test_credless_import_honors_extension_new_api_detection():
     import_json = credless_extension_import_json()
     import_json["detected"]["provider"] = "new-api（未采集到凭据）"
@@ -322,8 +356,10 @@ def test_extension_recognizes_new_api_signature_without_credentials():
     ).read_text(encoding="utf-8")
 
     assert "function hasNewApiSignature" in popup_js
+    assert "function extractNewApiRefreshUser" in popup_js
     assert "'new_api_has_session'" in popup_js
     assert "new_api_refresh" in popup_js
     assert "/api/user/auth/refresh" in popup_js
+    assert "new-api（JWT 刷新凭据）" in popup_js
     assert "new-api（未采集到凭据）" in popup_js
     assert "不可导入" in popup_js

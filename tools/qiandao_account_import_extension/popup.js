@@ -142,6 +142,18 @@ function normalizeIdentityFromPayload(payload) {
   return hasIdentity ? data : null;
 }
 
+// The new-api refresh endpoint responds with {access_token, session, user, ...};
+// only the user identity is used here so the site can be imported with its real
+// account name and user id, even though the JWT refresh credential itself is not
+// usable for automated sign-in in this version.
+function extractNewApiRefreshUser(result) {
+  if (!result || !result.ok || !result.isJson || !result.json || typeof result.json !== 'object') return null;
+  const data = result.json.data && typeof result.json.data === 'object' ? result.json.data : result.json;
+  const user = data.user && typeof data.user === 'object' ? data.user : null;
+  if (!user) return null;
+  return normalizeIdentityFromPayload(user);
+}
+
 async function getActiveTab() {
   const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
   return tabs && tabs[0] ? tabs[0] : null;
@@ -237,7 +249,7 @@ async function requestJsonInPage(tabId, path, options = {}) {
       try {
         const url = new URL(requestPath, location.origin).href;
         const response = await fetch(url, {
-          method: 'GET',
+          method: (requestOptions && requestOptions.method) || 'GET',
           credentials: 'include',
           cache: 'no-store',
           headers: {
@@ -395,6 +407,37 @@ async function inferAndEnrich(tabId, output) {
     };
   }
 
+  // new-api 系站点把登录凭据放在 Path=/api/user/auth 的 HttpOnly new_api_refresh
+  // Cookie 中，API 走短效 JWT Bearer。凭据本身无法用于自动签到/检测，但在页面内
+  // 调用刷新接口可以取回 user 身份，让导入记录带真实账户名和用户 ID。
+  const refreshCookie = pickCookie(cookies, ['new_api_refresh']);
+  if (refreshCookie && refreshCookie.value) {
+    const refreshResult = await requestJsonInPage(tabId, '/api/user/auth/refresh', { method: 'POST' });
+    apiScan.allResultsSummary.push(refreshResult);
+    const refreshUser = extractNewApiRefreshUser(refreshResult);
+    if (refreshUser) {
+      const displayName = pickAccountName(refreshUser);
+      const userId = String(refreshUser.id ?? '').trim();
+      return {
+        provider: 'new-api（JWT 刷新凭据）',
+        name: displayName,
+        userId,
+        sessionField: 'cookie.new_api_refresh（仅记录，不支持自动签到/检测）',
+        hasSession: false,
+        account: {
+          provider: 'unsupported',
+          base_url: output.origin,
+          name: displayName || '',
+          new_api_user: userId,
+          session: '',
+          cookie: `new_api_refresh=${refreshCookie.value}`,
+          identity: refreshUser
+        },
+        apiScan
+      };
+    }
+  }
+
   if (hasNewApiSignature(cookies, localItems)) {
     return {
       provider: 'new-api（未采集到凭据）',
@@ -484,6 +527,8 @@ async function collect() {
 
     if (summary.provider === '未识别') {
       setStatus('未识别为 new-api 或 sub2api。请确认当前页面已经登录，且网站属于这两种类型。', 'warn');
+    } else if (summary.provider === 'new-api（JWT 刷新凭据）') {
+      setStatus(`已识别账户 ${summary.name || summary.userId || '-'}：站点使用 new-api JWT 刷新凭据，本版本不支持自动签到/检测。复制导入 JSON 后，qiandao 会以该账户名和地址创建“不可导入”记录。`, 'warn');
     } else if (summary.provider === 'new-api（未采集到凭据）') {
       const hasRefreshCookie = (output.cookieEditorCookies || []).some(c => String(c.name || '').trim().toLowerCase() === 'new_api_refresh');
       setStatus(hasRefreshCookie
