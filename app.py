@@ -2444,10 +2444,11 @@ def merge_imported_account(existing: dict[str, Any], imported: dict[str, Any]) -
     merged["enabled"] = preserved_enabled
     merged["remark"] = preserved_remark
     if not str(imported.get("session") or "").strip():
-        # 无凭据的导入（仅身份信息 / 占位记录）不允许清空已有登录字段
-        for key in ("session", "cookie", "new_api_user"):
-            if str(existing.get(key) or "").strip():
-                merged[key] = existing.get(key)
+        # 无凭据的导入不允许清空真实账号的已有登录字段；占位记录之间则允许凭据更新
+        if not is_unsupported_placeholder(existing):
+            for key in ("session", "cookie", "new_api_user"):
+                if str(existing.get(key) or "").strip():
+                    merged[key] = existing.get(key)
     return normalize_account(merged, fallback_base_url=str(existing.get("base_url") or imported.get("base_url") or ""))
 
 
@@ -3861,13 +3862,20 @@ def sync_imported_account():
             raise RuntimeError("saved account not found")
         account = cfg["accounts"][saved_idx]
         signin_status = get_signin_status_today(str(account_index))
-        schedule_synced_account_background_tasks(account, created)
-        action_note = "已创建新账号，本地保存完成，签到和检测正在后台执行" if created else "已按网站地址和用户 ID 更新现有账号，本地保存完成，重新检测正在后台执行"
+        skip_detection = is_unsupported_placeholder(account)
+        if not skip_detection:
+            schedule_synced_account_background_tasks(account, created)
+        if skip_detection:
+            action_note = "已保存不可导入记录：该站点凭据不支持自动签到/检测"
+        elif created:
+            action_note = "已创建新账号，本地保存完成，签到和检测正在后台执行"
+        else:
+            action_note = "已按网站地址和用户 ID 更新现有账号，本地保存完成，重新检测正在后台执行"
         return jsonify({
             "ok": True,
             "created": created,
             "updated": not created,
-            "detection_pending": True,
+            "detection_pending": not skip_detection,
             "account": to_public_account(
                 account,
                 signin_status=signin_status,

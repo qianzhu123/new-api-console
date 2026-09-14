@@ -543,7 +543,7 @@ async function collect() {
       setStatus(`采集成功：已识别 ${summary.provider}，导入 JSON 已包含所需字段。${refreshHint}`, 'ok');
     }
 
-    els.updateLocalBtn.disabled = !summary.hasSession;
+    els.updateLocalBtn.disabled = !summary.hasSession && !summary.account;
     els.copyBtn.disabled = false;
     els.downloadBtn.disabled = false;
   } catch (err) {
@@ -633,9 +633,12 @@ async function refreshLocalAccount() {
     }
 
     const accountIndex = String(data.account?.account_index || '');
-    const action = data.created
-      ? `已添加账号 #${accountIndex} 到本地，签到和检测正在后台执行。`
-      : `已更新账号 #${accountIndex} 到本地，重新检测正在后台执行。`;
+    const unsupportedRecord = String(data.account?.provider || '') === 'unsupported';
+    const action = unsupportedRecord
+      ? `已保存不可导入记录 #${accountIndex}：${data.account?.name || ''}（该站点凭据不支持自动签到/检测）。`
+      : (data.created
+        ? `已添加账号 #${accountIndex} 到本地，签到和检测正在后台执行。`
+        : `已更新账号 #${accountIndex} 到本地，重新检测正在后台执行。`);
     setStatus(action, 'ok');
 
     notifyQiandaoTabs(accountIndex, data).catch(() => null);

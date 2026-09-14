@@ -3726,6 +3726,8 @@ window.addEventListener('message', (event) => {
       const result = detail.result || {};
       if (detail.detectionPending) {
         notify('ok', '账号已保存', `${accountLabel(key)} 登录信息已更新，检测正在后台执行。`);
+      } else if (normalizeProvider(detail.account?.provider) === 'unsupported') {
+        notify('ok', '不可导入记录已保存', `${accountLabel(key)} 已按账户名和地址记录（该站点凭据不支持自动签到/检测）。`);
       } else if (result.session_valid || result.status_state === 'VALID') {
         notify('ok', '账号已更新', `${accountLabel(key)} 登录信息已更新，检测成功。`);
       } else {

@@ -341,6 +341,91 @@ def test_credless_import_honors_extension_new_api_detection():
     assert any("new-api 特征" in note for note in notes)
 
 
+def test_sync_route_creates_unsupported_record_without_background_detection(tmp_path, monkeypatch):
+    patch_storage_paths(tmp_path, monkeypatch)
+    write_json(app.CONFIG_PATH, {"base_url": "https://xxs.example", "accounts": []})
+    scheduled = []
+    monkeypatch.setattr(
+        app,
+        "schedule_synced_account_background_tasks",
+        lambda account, created: scheduled.append((account.get("name"), created)),
+    )
+
+    import_json = credless_extension_import_json()
+    import_json["qiandaoAccount"] = {
+        "provider": "unsupported",
+        "base_url": "https://xxs.example",
+        "name": "qianzhu",
+        "new_api_user": "574",
+        "session": "",
+        "cookie": "new_api_refresh=token-value",
+        "identity": {"id": 574, "username": "qianzhu"},
+    }
+
+    with app.app.test_client() as client:
+        response = client.post(
+            "/api/auth/sync-account",
+            json={"json": json.dumps(import_json, ensure_ascii=False)},
+        )
+
+    assert response.status_code == 200
+    data = response.get_json()
+    assert data["ok"] is True
+    assert data["created"] is True
+    assert data["detection_pending"] is False
+    assert data["account"]["provider"] == "unsupported"
+    assert data["account"]["name"] == "qianzhu"
+    assert data["account"]["new_api_user"] == "574"
+    assert scheduled == []
+    config = json.loads(app.CONFIG_PATH.read_text(encoding="utf-8"))
+    assert config["accounts"][0]["name"] == "qianzhu"
+    assert config["accounts"][0]["provider"] == "unsupported"
+
+
+def test_sync_route_updates_existing_unsupported_record_in_place(tmp_path, monkeypatch):
+    patch_storage_paths(tmp_path, monkeypatch)
+    existing = {
+        "account_index": 3,
+        "name": "qianzhu",
+        "provider": "unsupported",
+        "base_url": "https://xxs.example",
+        "new_api_user": "574",
+        "session": "",
+        "cookie": "new_api_refresh=old-value",
+        "remark": "keep",
+        "enabled": True,
+        "api_keys": [],
+    }
+    write_json(app.CONFIG_PATH, {"base_url": "https://xxs.example", "accounts": [existing]})
+    monkeypatch.setattr(app, "schedule_synced_account_background_tasks", lambda *a, **k: None)
+
+    import_json = credless_extension_import_json()
+    import_json["qiandaoAccount"] = {
+        "provider": "unsupported",
+        "base_url": "https://xxs.example",
+        "name": "qianzhu",
+        "new_api_user": "574",
+        "session": "",
+        "cookie": "new_api_refresh=new-value",
+        "identity": {"id": 574, "username": "qianzhu"},
+    }
+
+    with app.app.test_client() as client:
+        response = client.post(
+            "/api/auth/sync-account",
+            json={"json": json.dumps(import_json, ensure_ascii=False)},
+        )
+
+    assert response.status_code == 200
+    data = response.get_json()
+    assert data["created"] is False
+    assert data["detection_pending"] is False
+    config = json.loads(app.CONFIG_PATH.read_text(encoding="utf-8"))
+    assert config["accounts"][0]["account_index"] == 3
+    assert config["accounts"][0]["cookie"] == "new_api_refresh=new-value"
+    assert config["accounts"][0]["remark"] == "keep"
+
+
 def test_frontend_supports_unsupported_provider_option():
     template = (app.ROOT / "templates" / "index.html").read_text(encoding="utf-8")
 
@@ -362,4 +447,6 @@ def test_extension_recognizes_new_api_signature_without_credentials():
     assert "/api/user/auth/refresh" in popup_js
     assert "new-api（JWT 刷新凭据）" in popup_js
     assert "new-api（未采集到凭据）" in popup_js
+    assert "!summary.hasSession && !summary.account" in popup_js
+    assert "已保存不可导入记录" in popup_js
     assert "不可导入" in popup_js
