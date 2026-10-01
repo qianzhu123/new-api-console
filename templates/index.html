@@ -532,6 +532,55 @@
     }
     .copy-icon::before { left: 1px; top: 1px; }
     .copy-icon::after { right: 0; bottom: 0; }
+    .open-icon {
+      position: relative;
+      width: 13px;
+      height: 13px;
+      background: linear-gradient(45deg, transparent 44%, currentColor 44%, currentColor 56%, transparent 56%);
+    }
+    .open-icon::before {
+      content: "";
+      position: absolute;
+      left: 1px;
+      bottom: 1px;
+      width: 8px;
+      height: 8px;
+      border: 1.5px solid currentColor;
+      border-top-color: transparent;
+      border-right-color: transparent;
+      border-radius: 3px;
+    }
+    .open-icon::after {
+      content: "";
+      position: absolute;
+      right: 0;
+      top: 0;
+      width: 6px;
+      height: 6px;
+      border-top: 1.5px solid currentColor;
+      border-right: 1.5px solid currentColor;
+    }
+    .open-icon-button {
+      position: absolute;
+      right: 41px;
+      top: 25px;
+      width: 30px;
+      height: 30px;
+      padding: 0;
+      border-radius: 9px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      color: #5f4e3b;
+      background: rgba(255,255,255,.78);
+      border: 1px solid rgba(176,139,47,.26);
+      box-shadow: none;
+    }
+    .open-icon-button:hover {
+      transform: translateY(-1px);
+      background: #fffaf0;
+      box-shadow: 0 5px 12px rgba(68,52,31,.12);
+    }
     .metric-grid {
       display: grid;
       grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -673,7 +722,7 @@
     .site-special-combo .combo-toggle { top: 25px; }
     .combo-wrap input {
       height: 38px;
-      padding-right: 46px;
+      padding-right: 82px;
       border-radius: 10px;
       background:
         linear-gradient(180deg, rgba(255,255,255,.96), rgba(255,253,248,.96));
@@ -982,6 +1031,9 @@
             <div class="form-group combo-wrap">
               <label for="f-base-url">域名地址</label>
               <input id="f-base-url" placeholder="https://example.com" autocomplete="off" />
+              <button type="button" class="open-icon-button" data-open-form-base-url title="打开当前地址并复制网址" aria-label="打开当前地址并复制网址">
+                <span class="open-icon" aria-hidden="true"></span>
+              </button>
               <button type="button" class="combo-toggle" data-combo-target="f-base-url" aria-label="展开本地地址列表">⌄</button>
               <div id="f-base-url-list" class="combo-list" role="listbox" data-combo-label="本地地址"></div>
             </div>
@@ -1361,6 +1413,17 @@ function openAccountAuthRefreshSite(key) {
   }
   window.open(targetUrl, '_blank', 'noopener');
   notify('warn2', '已打开目标登录页', 'qiandao 不会清除旧登录或自动填写密码。登录目标账号后，点击扩展里的“采集当前页”和“更新到本地并重新检测”。');
+}
+
+function openSiteUrl(url, sourceLabel = '地址') {
+  const normalized = normalizeBaseUrlInput(url);
+  if (!normalized || !/^https?:\/\//i.test(normalized)) {
+    notify('bad2', '无法跳转', `${sourceLabel}为空或格式不正确。`);
+    return;
+  }
+  copyText(normalized, '地址已复制').catch(() => {});
+  window.open(normalized, '_blank', 'noopener');
+  log(`已打开站点：${normalized}`, 'ok');
 }
 
 function normalizeBaseUrlInput(value) {
@@ -2856,6 +2919,9 @@ function renderSiteDetail() {
         <button type="button" class="copy-icon-button" data-copy-site-address title="复制地址" aria-label="复制地址">
           <span class="copy-icon" aria-hidden="true"></span>
         </button>
+        <button type="button" class="copy-icon-button" data-open-site-address title="打开站点并复制网址" aria-label="打开站点并复制网址">
+          <span class="open-icon" aria-hidden="true"></span>
+        </button>
       </span>
       <button type="button" class="secondary site-pin-button ${info.pinned ? 'active' : ''}" data-toggle-site-pin title="${info.pinned ? '取消地址置顶' : '置顶该地址'}" aria-label="${info.pinned ? '取消地址置顶' : '置顶该地址'}">${info.pinned ? '已置顶' : '置顶'}</button>
     </div>
@@ -2982,6 +3048,8 @@ function renderSiteDetail() {
   }
   const copySiteAddressButton = el.detailStatus.querySelector('[data-copy-site-address]');
   if (copySiteAddressButton) copySiteAddressButton.addEventListener('click', () => copyText(baseUrl, '地址已复制'));
+  const openSiteAddressButton = el.detailStatus.querySelector('[data-open-site-address]');
+  if (openSiteAddressButton) openSiteAddressButton.addEventListener('click', () => openSiteUrl(baseUrl, '地址'));
   const sitePinButton = el.detailStatus.querySelector('[data-toggle-site-pin]');
   if (sitePinButton) sitePinButton.addEventListener('click', () => toggleSitePinned(baseUrl).catch((e) => notify('bad2', '地址置顶失败', e.message || String(e))));
   const detectCheckinButton = el.detailStatus.querySelector('[data-detect-site-checkin]');
@@ -3045,6 +3113,9 @@ function renderDetail() {
           <button type="button" class="copy-icon-button" data-copy-address title="复制地址" aria-label="复制地址">
             <span class="copy-icon" aria-hidden="true"></span>
           </button>
+          <button type="button" class="copy-icon-button" data-open-address title="打开站点并复制网址" aria-label="打开站点并复制网址">
+            <span class="open-icon" aria-hidden="true"></span>
+          </button>
         </span>
       </div>
     </div>
@@ -3085,6 +3156,10 @@ function renderDetail() {
   const copyAddressButton = el.detailStatus.querySelector('[data-copy-address]');
   if (copyAddressButton) {
     copyAddressButton.addEventListener('click', () => copyText(acc.base_url || '', '地址已复制'));
+  }
+  const openAddressButton = el.detailStatus.querySelector('[data-open-address]');
+  if (openAddressButton) {
+    openAddressButton.addEventListener('click', () => openSiteUrl(acc.base_url || '', '地址'));
   }
   const saveAccountRemarkButton = el.detailStatus.querySelector('[data-save-account-remark]');
   if (saveAccountRemarkButton) saveAccountRemarkButton.addEventListener('click', saveAccountRemark);
@@ -3709,6 +3784,13 @@ for (const toggle of document.querySelectorAll('.combo-toggle')) {
     if (!node) return;
     showComboList(node);
     node.focus();
+  });
+}
+const openFormBaseUrlButton = document.querySelector('[data-open-form-base-url]');
+if (openFormBaseUrlButton) {
+  openFormBaseUrlButton.addEventListener('mousedown', (e) => {
+    e.preventDefault();
+    openSiteUrl(el.fBaseUrl.value, '域名地址');
   });
 }
 document.addEventListener('mousedown', (e) => {
