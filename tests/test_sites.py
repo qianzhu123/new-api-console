@@ -106,3 +106,97 @@ def test_site_models_use_first_account_filter_and_cache(tmp_path, monkeypatch):
     assert calls[0]["headers"]["referer"] == "https://example.test/keys"
     cached = json.loads(app.SITE_INFO_PATH.read_text(encoding="utf-8"))
     assert cached["sites"]["https://example.test"]["models"] == response.get_json()["models"]
+
+
+def test_rename_site_base_url_moves_accounts_and_site_info(tmp_path, monkeypatch):
+    monkeypatch.setattr(app, "CONFIG_PATH", tmp_path / "session.json")
+    monkeypatch.setattr(app, "SITE_INFO_PATH", tmp_path / "site_info.json")
+    monkeypatch.setattr(app, "TOKEN_CACHE_PATH", tmp_path / "token_cache.json")
+    write_json(app.CONFIG_PATH, site_config())
+    write_json(
+        app.SITE_INFO_PATH,
+        {"sites": {"https://example.test": {"remark": "老备注", "pinned": True}}},
+    )
+
+    with app.app.test_client() as client:
+        response = client.put(
+            "/api/sites/info",
+            json={
+                "base_url": "https://example.test",
+                "new_base_url": "https://renamed.test",
+                "remark": "新备注",
+                "pinned": True,
+            },
+        )
+
+    assert response.status_code == 200
+    body = response.get_json()
+    assert body["renamed"] is True
+    assert body["base_url"] == "https://renamed.test"
+    assert body["site"]["remark"] == "新备注"
+
+    config = json.loads(app.CONFIG_PATH.read_text(encoding="utf-8"))
+    assert {acc["base_url"] for acc in config["accounts"]} == {"https://renamed.test"}
+
+    store = json.loads(app.SITE_INFO_PATH.read_text(encoding="utf-8"))
+    assert "https://example.test" not in store["sites"]
+    assert store["sites"]["https://renamed.test"]["remark"] == "新备注"
+    assert store["sites"]["https://renamed.test"]["pinned"] is True
+
+
+def test_rename_site_base_url_rejects_occupied_target(tmp_path, monkeypatch):
+    monkeypatch.setattr(app, "CONFIG_PATH", tmp_path / "session.json")
+    monkeypatch.setattr(app, "SITE_INFO_PATH", tmp_path / "site_info.json")
+    monkeypatch.setattr(app, "TOKEN_CACHE_PATH", tmp_path / "token_cache.json")
+    config = site_config()
+    config["accounts"].append(
+        {
+            "account_index": 9,
+            "name": "third",
+            "enabled": True,
+            "base_url": "https://occupied.test",
+            "new_api_user": "300",
+            "session": "third-session-value-that-is-long-enough",
+            "api_keys": [],
+        }
+    )
+    write_json(app.CONFIG_PATH, config)
+
+    with app.app.test_client() as client:
+        response = client.put(
+            "/api/sites/info",
+            json={"base_url": "https://example.test", "new_base_url": "https://occupied.test"},
+        )
+
+    assert response.status_code == 409
+    after = json.loads(app.CONFIG_PATH.read_text(encoding="utf-8"))
+    assert {acc["base_url"] for acc in after["accounts"]} == {
+        "https://example.test",
+        "https://occupied.test",
+    }
+
+
+def test_rename_site_base_url_migrates_token_cache(tmp_path, monkeypatch):
+    monkeypatch.setattr(app, "CONFIG_PATH", tmp_path / "session.json")
+    monkeypatch.setattr(app, "SITE_INFO_PATH", tmp_path / "site_info.json")
+    monkeypatch.setattr(app, "TOKEN_CACHE_PATH", tmp_path / "token_cache.json")
+    write_json(app.CONFIG_PATH, site_config())
+    old_key = app.token_cache_key(
+        {"provider": "new-api", "base_url": "https://example.test", "new_api_user": "100", "session": ""}
+    )
+    write_json(app.TOKEN_CACHE_PATH, {"accounts": {old_key: {"tokens": [{"id": 1}]}}})
+
+    with app.app.test_client() as client:
+        response = client.put(
+            "/api/sites/info",
+            json={"base_url": "https://example.test", "new_base_url": "https://renamed.test"},
+        )
+
+    assert response.status_code == 200
+    cache = json.loads(app.TOKEN_CACHE_PATH.read_text(encoding="utf-8"))
+    new_key = app.token_cache_key(
+        {"provider": "new-api", "base_url": "https://renamed.test", "new_api_user": "100", "session": ""}
+    )
+    assert old_key not in cache["accounts"]
+    assert cache["accounts"][new_key]["tokens"] == [{"id": 1}]
+

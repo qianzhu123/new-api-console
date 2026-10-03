@@ -420,6 +420,8 @@
     }
     .site-model-tools button { padding: 6px 9px; font-size: 12px; }
     .site-custom-grid { display:grid; grid-template-columns:minmax(0,1fr) 124px; gap:10px; align-items:end; }
+    .site-base-url-row { margin-bottom:9px; }
+    .site-base-url-row input { width:100%; }
     .site-color-input-row { display:flex; align-items:center; gap:8px; }
     .site-color-input-row input[type="color"] { width:46px; height:34px; padding:2px; cursor:pointer; }
     .site-color-input-row input[type="text"] { min-width:0; }
@@ -2663,6 +2665,7 @@ async function saveSiteInfo(baseUrl) {
   const specialNode = el.detailStatus.querySelector('[data-site-special]');
   const colorNode = el.detailStatus.querySelector('[data-site-color-text]');
   const checkinModeNode = el.detailStatus.querySelector('[data-site-checkin-mode]');
+  const baseUrlNode = el.detailStatus.querySelector('[data-site-base-url]');
   const remark = String(remarkNode?.value || '').trim();
   const specialInfo = String(specialNode?.value || '').trim();
   const displayColor = String(colorNode?.value || '').trim();
@@ -2671,19 +2674,55 @@ async function saveSiteInfo(baseUrl) {
   if (remark.length > 500) { notify('warn2', '备注过长', '地址备注不能超过 500 个字符。'); return; }
   if (specialInfo.length > 100) { notify('warn2', '特殊信息过长', '特殊信息不能超过 100 个字符。'); return; }
   if (displayColor && !/^#[0-9a-fA-F]{6}$/.test(displayColor)) { notify('warn2', '颜色格式错误', '颜色必须是 #RRGGBB 格式。'); return; }
-  state.siteLoading[normalized] = 'remark';
-  try {
-    const data = await api('/api/sites/info', {
-      method: 'PUT',
-      body: JSON.stringify({ base_url: normalized, remark, special_info: specialInfo, display_color: displayColor, pinned, checkin_mode: checkinMode }),
+
+  const rawBase = baseUrlNode ? String(baseUrlNode.value || '').trim() : normalized;
+  if (!rawBase) { notify('warn2', '地址为空', '请输入站点地址。'); return; }
+  const nextBaseUrl = normalizeBaseUrlInput(rawBase);
+  const renaming = !!nextBaseUrl && nextBaseUrl !== normalized;
+  if (renaming) {
+    if (!/^https?:\/\/.+/i.test(nextBaseUrl)) { notify('warn2', '地址无效', '请输入有效的 http(s) 地址。'); return; }
+    const occupied = (state.accounts || []).some((acc) => normalizeBaseUrlInput(acc.base_url || state.defaultBaseUrl) === nextBaseUrl);
+    if (occupied) { notify('bad2', '地址已被占用', `${nextBaseUrl} 已经属于另一个分组，请换一个地址。`); return; }
+    const movingCount = (state.accounts || []).filter((acc) => normalizeBaseUrlInput(acc.base_url || state.defaultBaseUrl) === normalized).length;
+    const confirmed = await showConfirmDialog({
+      title: '修改地址',
+      message: `将把 ${movingCount} 个账号的地址从 ${normalized} 改为 ${nextBaseUrl}，并同步该站点的备注 / 颜色 / 签到设置。是否继续？`,
+      okText: '修改',
     });
-    state.siteInfo[normalized] = data.site || {};
-    if ((data.site || {}).checkin_mode === 'disabled') markSiteAccountsCheckinUnsupported(normalized);
-    if ((data.site || {}).checkin_mode === 'enabled' || (data.site || {}).checkin_mode === 'manual') clearSiteAccountsUnsupportedIfManualEnabled(normalized);
-    log(`${normalized} 地址信息已保存`, 'ok');
-    notify('ok', '地址信息已保存', normalized);
+    if (!confirmed) return;
+  }
+
+  const target = renaming ? nextBaseUrl : normalized;
+  state.siteLoading[normalized] = 'remark';
+  if (renaming) state.siteLoading[target] = 'remark';
+  try {
+    const body = { base_url: normalized, remark, special_info: specialInfo, display_color: displayColor, pinned, checkin_mode: checkinMode };
+    if (renaming) body.new_base_url = nextBaseUrl;
+    const data = await api('/api/sites/info', { method: 'PUT', body: JSON.stringify(body) });
+    const finalUrl = normalizeBaseUrlInput(data.base_url || target);
+    state.siteInfo[finalUrl] = data.site || {};
+    if (finalUrl !== normalized) {
+      delete state.siteInfo[normalized];
+      if ((data.accounts || []).length) state.accounts = data.accounts;
+    }
+    if ((data.site || {}).checkin_mode === 'disabled') markSiteAccountsCheckinUnsupported(finalUrl);
+    if ((data.site || {}).checkin_mode === 'enabled' || (data.site || {}).checkin_mode === 'manual') clearSiteAccountsUnsupportedIfManualEnabled(finalUrl);
+    if (data.renamed) {
+      log(`${normalized} 地址已改为 ${finalUrl}`, 'ok');
+      notify('ok', '地址已修改', `${finalUrl} 地址信息已保存。`);
+    } else {
+      log(`${finalUrl} 地址信息已保存`, 'ok');
+      notify('ok', '地址信息已保存', finalUrl);
+    }
+    if (data.renamed) {
+      if (state.selectedSite === normalized) state.selectedSite = finalUrl;
+      await refreshAccounts();
+      selectSite(finalUrl);
+      return;
+    }
   } finally {
     delete state.siteLoading[normalized];
+    delete state.siteLoading[target];
     renderTable();
     renderDetail();
   }
@@ -2947,6 +2986,10 @@ function renderSiteDetail() {
       </div>
     </div>
     <div class="site-section">
+      <div class="site-base-url-row">
+        <label>地址</label>
+        <input type="text" class="mono" data-site-base-url autocomplete="off" value="${escapeHtml(baseUrl)}" placeholder="https://example.com" />
+      </div>
       <textarea class="site-remark-editor" data-site-remark maxlength="500" placeholder="填写该地址的备注信息">${escapeHtml(info.remark || '')}</textarea>
       <div class="site-custom-grid" style="margin-top:9px;">
         <div class="combo-wrap site-special-combo">
@@ -3050,6 +3093,10 @@ function renderSiteDetail() {
   if (copySiteAddressButton) copySiteAddressButton.addEventListener('click', () => copyText(baseUrl, '地址已复制'));
   const openSiteAddressButton = el.detailStatus.querySelector('[data-open-site-address]');
   if (openSiteAddressButton) openSiteAddressButton.addEventListener('click', () => openSiteUrl(baseUrl, '地址'));
+  const siteBaseUrlInput = el.detailStatus.querySelector('[data-site-base-url]');
+  if (siteBaseUrlInput) siteBaseUrlInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); saveSiteInfo(baseUrl).catch((err) => notify('bad2', '地址信息保存失败', err.message || String(err))); }
+  });
   const sitePinButton = el.detailStatus.querySelector('[data-toggle-site-pin]');
   if (sitePinButton) sitePinButton.addEventListener('click', () => toggleSitePinned(baseUrl).catch((e) => notify('bad2', '地址置顶失败', e.message || String(e))));
   const detectCheckinButton = el.detailStatus.querySelector('[data-detect-site-checkin]');

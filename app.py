@@ -1016,6 +1016,82 @@ def update_site_info(
     return get_site_info(normalized_url)
 
 
+def rename_site_base_url(old_base_url: str, new_base_url: str) -> dict[str, Any]:
+    """把某个地址分组下的全部账号改到新地址，并迁移站点级数据。
+
+    - 账号以 account_index 为主键，改 base_url 只改数据字段。
+    - 迁移 site_info.json（以 base_url 为键）与 token_cache.json（键含 base_url）。
+    - signin/status/history 以 account_index 为键，无需迁移。
+    新地址若已被其它账号或站点占用则抛 ValueError（由路由转 409）。
+    """
+    old_url = normalize_base_url(old_base_url)
+    new_url = normalize_base_url(new_base_url)
+    if old_url == new_url:
+        return {"renamed": False, "old_base_url": old_url, "new_base_url": new_url, "moved_accounts": 0}
+
+    with config_lock:
+        cfg = load_config(normalize_and_persist=False)
+        accounts = cfg.get("accounts", [])
+        config_base = normalize_base_url(str(cfg.get("base_url") or get_base_url()))
+
+        def account_url(account: dict[str, Any]) -> str:
+            return normalize_base_url(str(account.get("base_url") or config_base))
+
+        conflicting = [acc for acc in accounts if account_url(acc) == new_url]
+        if conflicting:
+            raise ValueError(f"目标地址已被占用：{new_url}")
+
+        store = load_site_info()
+        sites = store.get("sites")
+        if not isinstance(sites, dict):
+            sites = {}
+            store["sites"] = sites
+        if new_url in sites and new_url != old_url:
+            raise ValueError(f"目标地址已存在站点信息：{new_url}")
+
+        moved = [acc for acc in accounts if account_url(acc) == old_url]
+        if not moved and old_url not in sites:
+            return {"renamed": False, "old_base_url": old_url, "new_base_url": new_url, "moved_accounts": 0}
+
+        # 迁移站点信息（整条保留，含备注 / 颜色 / 签到模式 / 模型缓存 / 异常标记）。
+        if old_url in sites:
+            entry = sites.pop(old_url)
+            if new_url not in sites:
+                sites[new_url] = entry
+            store["sites"] = sites
+            atomic_save_json(SITE_INFO_PATH, store)
+
+        # 迁移令牌缓存：键含 base_url，须在改动前取旧键。
+        cache = load_token_cache()
+        cache_accounts = cache.get("accounts")
+        if not isinstance(cache_accounts, dict):
+            cache_accounts = {}
+        cache_changed = False
+        for acc in moved:
+            old_key = token_cache_key(acc)
+            acc["base_url"] = new_url
+            new_key = token_cache_key(acc)
+            if old_key != new_key and old_key in cache_accounts:
+                if new_key not in cache_accounts:
+                    cache_accounts[new_key] = cache_accounts[old_key]
+                del cache_accounts[old_key]
+                cache_changed = True
+        if cache_changed:
+            cache["accounts"] = cache_accounts
+            atomic_save_json(TOKEN_CACHE_PATH, cache)
+
+        if moved:
+            cfg["accounts"] = accounts
+            save_config(cfg)
+
+    return {
+        "renamed": True,
+        "old_base_url": old_url,
+        "new_base_url": new_url,
+        "moved_accounts": len(moved),
+    }
+
+
 def first_account_for_site(base_url: str) -> dict[str, Any] | None:
     normalized_url = normalize_base_url(base_url)
     cfg = load_config()
@@ -3672,13 +3748,30 @@ def site_info():
         return jsonify({"ok": False, "error": "special_info must not exceed 100 characters"}), 400
     if display_color and not normalize_site_color(display_color):
         return jsonify({"ok": False, "error": "display_color must be a hex color like #ff8800"}), 400
+
+    renamed = False
+    new_base_url = str(payload.get("new_base_url") or "").strip() if isinstance(payload, dict) else ""
+    if new_base_url and normalize_base_url(new_base_url) != normalize_base_url(base_url):
+        try:
+            rename_result = rename_site_base_url(base_url, new_base_url)
+        except ValueError as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 409
+        renamed = bool(rename_result.get("renamed"))
+        base_url = rename_result.get("new_base_url") or base_url
+
     site = update_site_info(base_url, remark=remark, special_info=special_info, display_color=display_color, pinned=pinned, checkin_mode=checkin_mode)
     if has_checkin_mode and site.get("checkin_mode") in ("enabled", "manual"):
         clear_site_signin_status_today(base_url, only_status="不可签到")
     elif has_checkin_mode and site.get("checkin_mode") == "disabled":
         clear_site_signin_status_today(base_url, only_status="已签到")
     site = get_site_info(base_url)
-    return jsonify({"ok": True, "site": site, "accounts": build_public_accounts(load_config(normalize_and_persist=False).get("accounts", []))})
+    return jsonify({
+        "ok": True,
+        "site": site,
+        "base_url": base_url,
+        "renamed": renamed,
+        "accounts": build_public_accounts(load_config(normalize_and_persist=False).get("accounts", [])),
+    })
 
 
 @app.route("/api/sites/manual-signin", methods=["POST"])
