@@ -1,24 +1,22 @@
 @echo off
+REM 2026-11-23: bare "python" hits the Microsoft Store stub; pin to tools uv venv.
+REM Idempotent: if port 5050 is already listening, reuse it (no second instance).
 setlocal
 cd /d %~dp0
 
-where python >nul 2>nul
-if %errorlevel% neq 0 (
-  echo Python is not found in PATH.
+set "PY=D:\tools\Dev\Runtime\uvenvs\tools\Scripts\python.exe"
+if not exist "%PY%" (
+  echo Python venv not found: %PY%
   pause
   exit /b 1
 )
 
-echo Stopping the previous service on port 5050 ...
-powershell -NoProfile -ExecutionPolicy Bypass -Command "$attempt = 0; while ($attempt -lt 20) { $processIds = @(Get-NetTCPConnection -LocalPort 5050 -State Listen -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess -Unique); if ($processIds.Count -eq 0) { exit 0 }; foreach ($processId in $processIds) { Stop-Process -Id $processId -Force -ErrorAction SilentlyContinue }; Start-Sleep -Milliseconds 250; $attempt++ }; Write-Error 'Port 5050 is still in use after stopping previous services.'; exit 1"
-if %errorlevel% neq 0 (
-  pause
-  exit /b 1
+powershell -NoProfile -Command "if (Get-NetTCPConnection -LocalPort 5050 -State Listen -ErrorAction SilentlyContinue) { exit 0 } else { exit 1 }" >nul 2>&1
+if %errorlevel% equ 0 (
+  echo [info] qiandao already running on http://127.0.0.1:5050, reuse it.
+  exit /b 0
 )
 
-echo Starting new-api Local Web Console on http://127.0.0.1:5050 ...
-start "" http://127.0.0.1:5050
-python app.py
-
-pause
-
+echo Starting qiandao web console on http://127.0.0.1:5050 ...
+REM 2026-11-08 user decision: launcher must not auto-open a browser
+"%PY%" app.py
