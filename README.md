@@ -60,10 +60,10 @@ qiandao/
 
 ## Quick Start
 
-1. Install dependencies:
+1. Install dependencies (into the tools uv venv; bare `python`/`pip` hits the MS Store stub on this machine):
 
 ```powershell
-pip install flask requests
+& "D:\tools\Dev\Runtime\uvenvs\tools\Scripts\python.exe" -m uv pip install flask requests
 ```
 
 No browser automation dependency is required for JSON import. The previous browser authorization entry has been removed from the UI; add-account import now works by pasting a captured JSON document.
@@ -99,7 +99,7 @@ run_web.bat
 4. Open browser:
 
 - `http://127.0.0.1:5050`
-- On Windows, `run_web.bat` first terminates all previous service processes listening on port `5050`, then starts one new service instance.
+- On Windows, `run_web.bat` is idempotent: if port `5050` is already listening it reuses the running instance; otherwise it starts exactly one new service instance (pinned to the tools uv venv python).
 - The web UI includes a fixed left account list and right detail panel so long account groups can be browsed without losing the main controls.
 
 ## Core Behavior
